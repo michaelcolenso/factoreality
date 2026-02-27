@@ -10,13 +10,16 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 URL_PATTERN = re.compile(r"https?://[^\s\)\]\"'>]+")
+_TRAILING_PUNCT = re.compile(r"[.,;:!?]+$")
 MAX_WORKERS = 10
 TIMEOUT = 10
 
 
 def extract_urls(text: str) -> list[str]:
     """Extract all HTTP(S) URLs from a text string."""
-    return list(dict.fromkeys(URL_PATTERN.findall(text)))  # deduplicate, preserve order
+    raw = URL_PATTERN.findall(text)
+    cleaned = [_TRAILING_PUNCT.sub("", u) for u in raw]
+    return list(dict.fromkeys(cleaned))  # deduplicate, preserve order
 
 
 def check_url(url: str) -> tuple[str, int | str]:

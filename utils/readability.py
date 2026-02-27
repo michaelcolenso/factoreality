@@ -24,7 +24,7 @@ _STRIP_PATTERNS = [
     (re.compile(r"^#+\s+", re.MULTILINE), ""),            # headings
     (re.compile(r"[*_]{1,3}([^*_]+)[*_]{1,3}"), r"\1"),  # bold/italic
     (re.compile(r"^\s*[>\-\*\+]\s+", re.MULTILINE), ""), # blockquotes / lists
-    (re.compile(r"\|.*?\|"), " "),                        # table rows
+    (re.compile(r"\|[^\n]*", re.MULTILINE), " "),          # table rows
     (re.compile(r"---+"), " "),                           # horizontal rules
 ]
 
