@@ -1,0 +1,68 @@
+{
+  "ebook": {
+    "name": "Ebook / Guide",
+    "research_emphasis": "high",
+    "structure_emphasis": "high",
+    "content_emphasis": "high",
+    "design_emphasis": "medium-high",
+    "quality_threshold": 0.85,
+    "deliverables": ["PDF (primary)", "DOCX (optional)"],
+    "typical_word_count": [8000, 25000],
+    "typical_pages": [20, 80]
+  },
+  "template-pack": {
+    "name": "Template Pack",
+    "research_emphasis": "medium",
+    "structure_emphasis": "low",
+    "content_emphasis": "high",
+    "design_emphasis": "high",
+    "quality_threshold": 0.80,
+    "deliverables": ["DOCX/XLSX templates", "instruction PDF", "filled examples"],
+    "typical_word_count": [2000, 8000],
+    "typical_pages": [10, 40]
+  },
+  "worksheet-bundle": {
+    "name": "Worksheet Bundle",
+    "research_emphasis": "medium",
+    "structure_emphasis": "medium",
+    "content_emphasis": "medium",
+    "design_emphasis": "high",
+    "quality_threshold": 0.80,
+    "deliverables": ["PDF worksheets", "DOCX versions", "instruction guide"],
+    "typical_word_count": [3000, 10000],
+    "typical_pages": [15, 50]
+  },
+  "mini-course": {
+    "name": "Mini-Course / Email Course",
+    "research_emphasis": "high",
+    "structure_emphasis": "very-high",
+    "content_emphasis": "high",
+    "design_emphasis": "medium",
+    "quality_threshold": 0.85,
+    "deliverables": ["Lesson markdown/HTML files", "resource PDFs", "course outline"],
+    "typical_word_count": [10000, 30000],
+    "typical_pages": null
+  },
+  "resource-guide": {
+    "name": "Resource Guide / Swipe File Collection",
+    "research_emphasis": "very-high",
+    "structure_emphasis": "medium",
+    "content_emphasis": "medium",
+    "design_emphasis": "medium",
+    "quality_threshold": 0.80,
+    "deliverables": ["PDF guide", "linked resource list", "category index"],
+    "typical_word_count": [3000, 12000],
+    "typical_pages": [15, 50]
+  },
+  "report": {
+    "name": "Data-Driven Report",
+    "research_emphasis": "very-high",
+    "structure_emphasis": "high",
+    "content_emphasis": "high",
+    "design_emphasis": "high",
+    "quality_threshold": 0.90,
+    "deliverables": ["PDF report", "data appendix", "executive summary"],
+    "typical_word_count": [5000, 20000],
+    "typical_pages": [20, 60]
+  }
+}
