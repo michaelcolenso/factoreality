@@ -67,6 +67,18 @@ Options:
 - `--dry-run` — validate spec and plan without making LLM calls
 - `--resume`  — continue from the last completed stage after a halt
 
+
+
+### Local fallback mode (no API key)
+
+If `ANTHROPIC_API_KEY` is not set, the pipeline now uses a deterministic local LLM fallback so you can run end-to-end for testing and demos without external API calls.
+
+You can force this mode explicitly:
+
+```bash
+CONTENT_FACTORY_LOCAL_LLM=1 python orchestrator.py .
+```
+
 ### 4. Collect output
 
 When complete, check `output/` for deliverables and `status.md` for the

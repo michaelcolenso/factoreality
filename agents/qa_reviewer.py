@@ -84,11 +84,13 @@ class QAReviewerAgent(BaseAgent):
 
         spec_text = self.read_spec()
         plan_text = self.read_plan()
-        stage_output = (
-            self.read_file(stage_output_path)
-            if stage_output_path.exists()
-            else "(file not found)"
-        )
+        if not stage_output_path.exists():
+            stage_output = "(file not found)"
+        elif stage_output_path.is_dir():
+            files = sorted([p.name for p in stage_output_path.iterdir() if p.is_file()])
+            stage_output = "Directory listing:\n" + "\n".join(f"- {name}" for name in files)
+        else:
+            stage_output = self.read_file(stage_output_path)
 
         response = self.call_llm(
             system_prompt=system_prompt,

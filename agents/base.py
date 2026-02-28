@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from .local_llm import LocalLLM
+
 
 class BaseAgent:
     """
@@ -58,6 +60,10 @@ class BaseAgent:
 
         Requires ANTHROPIC_API_KEY in the environment.
         """
+        use_local = os.environ.get("CONTENT_FACTORY_LOCAL_LLM", "").lower() in {"1", "true", "yes"}
+        if use_local or not os.environ.get("ANTHROPIC_API_KEY"):
+            return LocalLLM().generate(system_prompt=system_prompt, user_message=user_message, max_tokens=max_tokens)
+
         import anthropic  # lazy import — only needed at runtime
 
         client = anthropic.Anthropic()
