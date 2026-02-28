@@ -41,15 +41,25 @@ Requires Python 3.11+ and an `ANTHROPIC_API_KEY` environment variable.
 
 Pandoc + XeLaTeX are optional but enable PDF export (Stage 5).
 
-### 2. Create your spec
+### 2. Provide input (choose one path)
+
+**Path A — Manual spec (most control)**
 
 ```bash
 cp templates/spec_template.md spec.md
-# Edit spec.md — be obsessively specific. This is the only input you provide.
+# Edit spec.md — be obsessively specific.
 ```
 
-The spec is the entire quality ceiling of the pipeline. A precise spec produces
-a precise product. A vague spec produces a vague product.
+**Path B — Brief-driven bootstrap (fastest start)**
+
+```bash
+cp templates/brief_template.md product-brief.md
+# Edit product-brief.md
+python orchestrator.py . --brief-file product-brief.md
+```
+
+The pipeline still runs against `spec.md` as its source of truth. In Path B,
+`spec.md` is generated for you before Gate 0.
 
 ### 3. Run
 
@@ -70,11 +80,10 @@ Options:
 - `--brief-file path/to/brief.md` — same as `--brief`, reading from a file
 - `--regenerate-spec` — force re-generation of `spec.md` from the brief
 
-If you don't have a `spec.md` yet, you can now bootstrap one and run in a single command:
-
-```bash
-python orchestrator.py . --brief-file product-brief.md
-```
+Notes:
+- Existing `spec.md` is reused by default.
+- Use `--regenerate-spec` with `--brief` or `--brief-file` to overwrite `spec.md`.
+- `--resume` continues from `status.md` and does not require regenerating `spec.md`.
 
 ### 4. Collect output
 
@@ -88,7 +97,7 @@ full audit log of every gate, score, decision, and retry.
 ```
 factoreality/
 ├── orchestrator.py          # Entry point — runs the full pipeline
-├── spec.md                  # Your product brief (you write this once)
+├── spec.md                  # Pipeline source of truth (manual or auto-generated)
 ├── implement.md             # Operating rules for all agents (read-only)
 ├── plan.md                  # Auto-generated pipeline plan (Gate 0)
 ├── status.md                # Running audit log

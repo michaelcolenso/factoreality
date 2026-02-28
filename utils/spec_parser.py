@@ -147,7 +147,7 @@ class SpecParser:
         else:
             thresholds["min_gate_confidence"] = 0.8
 
-        retry_m = re.search(r"Max retry cycles[:\s]+(\d+)", section, re.IGNORECASE)
+        retry_m = re.search(r"Max retry cycles(?: per gate)?[:\s]+(\d+)", section, re.IGNORECASE)
         if retry_m:
             thresholds["max_retry_cycles"] = int(retry_m.group(1))
         else:
