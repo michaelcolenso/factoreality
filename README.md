@@ -66,6 +66,15 @@ python orchestrator.py /path/to/project
 Options:
 - `--dry-run` — validate spec and plan without making LLM calls
 - `--resume`  — continue from the last completed stage after a halt
+- `--brief "..."` — generate `spec.md` from a short product brief, then run
+- `--brief-file path/to/brief.md` — same as `--brief`, reading from a file
+- `--regenerate-spec` — force re-generation of `spec.md` from the brief
+
+If you don't have a `spec.md` yet, you can now bootstrap one and run in a single command:
+
+```bash
+python orchestrator.py . --brief-file product-brief.md
+```
 
 ### 4. Collect output
 
@@ -87,6 +96,7 @@ factoreality/
 ├── agents/
 │   ├── base.py              # Shared LLM call + file helpers
 │   ├── planner.py           # Gate 0: generates plan.md
+│   ├── specification.py     # Pre-stage: generates spec.md from a brief
 │   ├── research.py          # Stage 1: research brief
 │   ├── outline.py           # Stage 2: locked outline
 │   ├── content.py           # Stage 3: full draft
@@ -107,7 +117,8 @@ factoreality/
 │   └── readability.py       # Flesch-Kincaid grade level scorer
 │
 ├── templates/
-│   ├── spec_template.md     # Blank spec to fill in
+│   ├── spec_template.md      # Blank spec to fill in manually
+│   ├── brief_template.md     # Optional brief for auto-generated specs
 │   └── product_profiles.json # Quality settings per product type
 │
 ├── research/                # Stage 1 output
