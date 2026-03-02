@@ -9,11 +9,11 @@ Usage:
     python orchestrator.py [project_dir]
     python orchestrator.py --dry-run [project_dir]
     python orchestrator.py --resume [project_dir]
+    python orchestrator.py --brief-file product-brief.md [project_dir]
 """
 
 import argparse
 import json
-import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,6 +25,7 @@ from agents.editorial import EditorialAgent
 from agents.formatter import FormatterAgent
 from agents.assembler import AssemblerAgent
 from agents.qa_reviewer import QAReviewerAgent
+from agents.specification import SpecificationAgent
 from gates.gate import GateRunner
 from utils.file_io import FileIO
 from utils.spec_parser import SpecParser
@@ -52,10 +53,19 @@ class Orchestrator:
         ("assembly",   "Stage 6: Assembly & Export",       "gate-6"),
     ]
 
-    def __init__(self, project_dir: Path, dry_run: bool = False, resume: bool = False):
+    def __init__(
+        self,
+        project_dir: Path,
+        dry_run: bool = False,
+        resume: bool = False,
+        brief: str = "",
+        regenerate_spec: bool = False,
+    ):
         self.project_dir = project_dir
         self.dry_run = dry_run
         self.resume = resume
+        self.brief = brief
+        self.regenerate_spec = regenerate_spec
 
         self.io = FileIO(project_dir)
         self.spec = None
@@ -71,6 +81,7 @@ class Orchestrator:
         }
         self.qa = QAReviewerAgent(project_dir)
         self.gate_runner = GateRunner(project_dir)
+        self.spec_agent = SpecificationAgent(project_dir)
 
     # ------------------------------------------------------------------
     # Entry point
@@ -80,11 +91,11 @@ class Orchestrator:
         """Execute the full pipeline. Returns True on success, False on failure."""
         self._log_run_start()
 
+        if not self._ensure_spec_exists():
+            return False
+
         try:
             self.spec = SpecParser(self.project_dir / "spec.md").parse()
-        except FileNotFoundError:
-            self._halt("spec.md not found. Create it from templates/spec_template.md.")
-            return False
         except ValueError as exc:
             self._halt(f"spec.md is invalid: {exc}")
             return False
@@ -102,6 +113,33 @@ class Orchestrator:
                 return False
 
         self._log_success()
+        return True
+
+    def _ensure_spec_exists(self) -> bool:
+        spec_path = self.project_dir / "spec.md"
+        has_existing_spec = spec_path.exists()
+        has_brief = bool(self.brief.strip())
+
+        if has_existing_spec and not self.regenerate_spec:
+            return True
+
+        if self.regenerate_spec and not has_brief:
+            self._halt(
+                "--regenerate-spec requires --brief or --brief-file. "
+                "Provide a brief to overwrite spec.md."
+            )
+            return False
+
+        if not has_existing_spec and not has_brief:
+            self._halt(
+                "spec.md not found. Create it from templates/spec_template.md or "
+                "run with --brief/--brief-file to auto-generate a spec."
+            )
+            return False
+
+        action = "Regenerating" if has_existing_spec else "Generating"
+        self.io.append_status(f"{action} spec.md from product brief via SpecificationAgent.\n")
+        self.spec_agent.run(brief=self.brief, dry_run=self.dry_run)
         return True
 
     # ------------------------------------------------------------------
@@ -166,8 +204,6 @@ class Orchestrator:
 
     def _run_stage(self, stage_key: str, stage_name: str, gate_key: str) -> bool:
         max_retries = self.spec.get("quality_thresholds", {}).get("max_retry_cycles", 3)
-        threshold = self.spec.get("quality_thresholds", {}).get("min_gate_confidence", 0.8)
-
         self.io.append_status(f"\n## {stage_name}\n**Started:** {utcnow()}\n")
 
         agent = self.agents[stage_key]
@@ -359,6 +395,21 @@ def main() -> None:
         action="store_true",
         help="Resume a previously halted run from the last completed stage.",
     )
+    parser.add_argument(
+        "--brief",
+        default="",
+        help="Short product brief used to generate spec.md before running the pipeline.",
+    )
+    parser.add_argument(
+        "--brief-file",
+        default="",
+        help="Path to a markdown/text file containing the product brief.",
+    )
+    parser.add_argument(
+        "--regenerate-spec",
+        action="store_true",
+        help="Regenerate spec.md from the provided brief even if spec.md already exists.",
+    )
 
     args = parser.parse_args()
     project_dir = Path(args.project_dir).resolve()
@@ -367,10 +418,24 @@ def main() -> None:
         print(f"Error: '{project_dir}' is not a directory.")
         sys.exit(1)
 
+    brief_text = args.brief
+    if args.brief_file:
+        brief_path = Path(args.brief_file).expanduser().resolve()
+        if not brief_path.exists():
+            print(f"Error: brief file '{brief_path}' does not exist.")
+            sys.exit(1)
+        brief_text = brief_path.read_text(encoding="utf-8")
+
+    if args.regenerate_spec and not brief_text.strip():
+        print("Error: --regenerate-spec requires --brief or --brief-file.")
+        sys.exit(1)
+
     orchestrator = Orchestrator(
         project_dir=project_dir,
         dry_run=args.dry_run,
         resume=args.resume,
+        brief=brief_text,
+        regenerate_spec=args.regenerate_spec,
     )
     success = orchestrator.run()
     sys.exit(0 if success else 1)
