@@ -41,5 +41,32 @@ class EnsureSpecExistsTests(unittest.TestCase):
             self.assertIn("--regenerate-spec requires --brief or --brief-file", status_text)
 
 
+class QAReviewerDryRunTests(unittest.TestCase):
+    def test_review_gate_returns_pass_without_llm_call(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_dir = Path(tmp)
+            (project_dir / "spec.md").write_text(
+                "## Product Type\nebook\n\n## Topic & Angle\nTest\n",
+                encoding="utf-8",
+            )
+            stage_output = project_dir / "plan.md"
+            stage_output.write_text("# Plan\n", encoding="utf-8")
+
+            from agents.qa_reviewer import QAReviewerAgent
+
+            reviewer = QAReviewerAgent(project_dir)
+            result = reviewer.review_gate(
+                gate_number=0,
+                spec={"quality_thresholds": {"min_gate_confidence": 0.8}},
+                stage_output_path=stage_output,
+                rubric_key="plan",
+                dry_run=True,
+            )
+
+            self.assertEqual(result["verdict"], "PASS")
+            self.assertEqual(result["score"], 1.0)
+            self.assertFalse(result["failing_dimensions"])
+
+
 if __name__ == "__main__":
     unittest.main()

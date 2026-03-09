@@ -164,6 +164,7 @@ class Orchestrator:
             spec=self.spec,
             stage_output_path=plan_path,
             rubric_key="plan",
+            dry_run=self.dry_run,
         )
         self._persist_gate_review(0, review)
 
@@ -184,6 +185,7 @@ class Orchestrator:
                 spec=self.spec,
                 stage_output_path=plan_path,
                 rubric_key="plan",
+                dry_run=self.dry_run,
             )
             self._persist_gate_review(0, review, attempt=attempt)
             if review["verdict"] == "PASS":
@@ -225,6 +227,7 @@ class Orchestrator:
                 spec=self.spec,
                 stage_output_path=output_path,
                 rubric_key=stage_key,
+                dry_run=self.dry_run,
             )
             self._persist_gate_review(gate_number, review, attempt=attempt)
 
