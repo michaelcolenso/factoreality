@@ -65,6 +65,7 @@ class QAReviewerAgent(BaseAgent):
         spec: dict,
         stage_output_path: Path,
         rubric_key: str,
+        dry_run: bool = False,
     ) -> dict:
         """
         Evaluate stage output at the specified gate.
@@ -84,11 +85,34 @@ class QAReviewerAgent(BaseAgent):
 
         spec_text = self.read_spec()
         plan_text = self.read_plan()
-        stage_output = (
-            self.read_file(stage_output_path)
-            if stage_output_path.exists()
-            else "(file not found)"
-        )
+        if stage_output_path.is_file():
+            stage_output = self.read_file(stage_output_path)
+        elif stage_output_path.is_dir():
+            entries = sorted(
+                str(path.relative_to(stage_output_path))
+                for path in stage_output_path.rglob("*")
+                if path.is_file()
+            )
+            preview = "\n".join(f"- {entry}" for entry in entries[:200])
+            stage_output = (
+                f"(directory listing)\n{preview}"
+                if preview
+                else "(directory exists but has no files)"
+            )
+        else:
+            stage_output = "(file not found)"
+
+        if dry_run:
+            return {
+                "verdict": "PASS",
+                "score": 1.0,
+                "dimension_scores": {
+                    dim["name"]: 1.0 for dim in rubric
+                },
+                "feedback": "",
+                "passing_dimensions": [dim["name"] for dim in rubric],
+                "failing_dimensions": [],
+            }
 
         response = self.call_llm(
             system_prompt=system_prompt,
