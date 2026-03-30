@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from typing import Any
 
 
 class FileIO:
@@ -11,6 +13,7 @@ class FileIO:
     def __init__(self, project_dir: Path) -> None:
         self.project_dir = project_dir
         self.status_path = project_dir / "status.md"
+        self.state_path = project_dir / "status.json"
 
     def initialize_status(self, header: str) -> None:
         """Create or overwrite status.md with the run header."""
@@ -26,6 +29,33 @@ class FileIO:
         if self.status_path.exists():
             return self.status_path.read_text(encoding="utf-8")
         return ""
+
+    def initialize_state(self, state: dict[str, Any]) -> None:
+        self.state_path.parent.mkdir(parents=True, exist_ok=True)
+        self.state_path.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
+
+    def read_state(self) -> dict[str, Any]:
+        if not self.state_path.exists():
+            return {}
+        try:
+            return json.loads(self.state_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {}
+
+    def update_state(self, **updates: Any) -> dict[str, Any]:
+        state = self.read_state()
+        state.update(updates)
+        self.initialize_state(state)
+        return state
+
+    def set_stage_state(self, stage_key: str, status: str, **extra: Any) -> dict[str, Any]:
+        state = self.read_state()
+        stages = state.setdefault("stages", {})
+        stage_state = stages.setdefault(stage_key, {})
+        stage_state["status"] = status
+        stage_state.update(extra)
+        self.initialize_state(state)
+        return state
 
     def read(self, relative_path: str) -> str:
         path = self.project_dir / relative_path

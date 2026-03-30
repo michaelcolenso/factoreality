@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from .base import BaseAgent
 from gates.rubrics import RUBRICS
@@ -23,8 +24,9 @@ Your job is NOT to be encouraging — it is to catch failures before they compou
 ## Your mandate at every gate:
 1. Read spec.md to understand what was supposed to be produced.
 2. Read the stage output to understand what was actually produced.
-3. Score the output on the rubric below — dimension by dimension.
-4. Produce a verdict: PASS, REVISE, or FAIL.
+3. Read the deterministic gate-check summary and use it as hard evidence.
+4. Score the output on the rubric below — dimension by dimension.
+5. Produce a verdict: PASS, REVISE, or FAIL.
 
 ## Verdict rules:
 - PASS: composite score >= quality_threshold AND no critical dimension scores below 0.5
@@ -65,6 +67,7 @@ class QAReviewerAgent(BaseAgent):
         spec: dict,
         stage_output_path: Path,
         rubric_key: str,
+        gate_checks: dict | None = None,
     ) -> dict:
         """
         Evaluate stage output at the specified gate.
@@ -89,18 +92,20 @@ class QAReviewerAgent(BaseAgent):
             if stage_output_path.exists()
             else "(file not found)"
         )
+        gate_checks = gate_checks or {"passed": [], "failed": [], "summary": "No deterministic checks were run."}
 
         response = self.call_llm(
             system_prompt=system_prompt,
             user_message=(
                 f"## spec.md\n\n{spec_text}\n\n"
                 f"## plan.md\n\n{plan_text}\n\n"
+                f"## Deterministic Gate Checks\n\n{gate_checks.get('summary', '')}\n\n"
                 f"## Stage Output ({stage_output_path.name})\n\n{stage_output}"
             ),
             max_tokens=2048,
         )
 
-        return self._parse_response(response, quality_threshold)
+        return self._parse_response(response, quality_threshold, rubric)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -115,49 +120,90 @@ class QAReviewerAgent(BaseAgent):
             )
         return "\n".join(lines)
 
-    def _parse_response(self, response: str, quality_threshold: float) -> dict:
-        """Parse JSON response from the reviewer LLM."""
-        # Strip any markdown code fences
+    def _parse_response(self, response: str, quality_threshold: float, rubric: list[dict]) -> dict:
+        """Parse and validate JSON response from the reviewer LLM."""
         text = response.strip()
         if text.startswith("```"):
             text = text.split("```", 2)[1]
             if text.startswith("json"):
                 text = text[4:]
-            # Strip closing fence
             if "```" in text:
                 text = text.rsplit("```", 1)[0]
             text = text.strip()
 
         try:
-            data = json.loads(text)
+            raw = json.loads(text)
         except json.JSONDecodeError:
-            # Fallback: extract key fields with heuristics
-            verdict = "FAIL"
-            if '"PASS"' in response:
-                verdict = "PASS"
-            elif '"REVISE"' in response:
-                verdict = "REVISE"
-            return {
-                "verdict": verdict,
-                "score": 0.0,
-                "dimension_scores": {},
-                "feedback": f"QA Reviewer response could not be parsed as JSON. Raw: {response[:500]}",
-                "passing_dimensions": [],
-                "failing_dimensions": [],
-            }
+            return self._invalid_response(
+                f"QA Reviewer response could not be parsed as JSON. Raw: {response[:500]}"
+            )
 
-        # Ensure required fields exist
-        data.setdefault("verdict", "FAIL")
-        data.setdefault("score", 0.0)
-        data.setdefault("dimension_scores", {})
-        data.setdefault("feedback", "")
-        data.setdefault("passing_dimensions", [])
-        data.setdefault("failing_dimensions", [])
+        if not isinstance(raw, dict):
+            return self._invalid_response("QA Reviewer response must be a JSON object.")
 
-        # Safety check: if score passes threshold but verdict is REVISE, trust the score
-        if data["score"] >= quality_threshold and data["verdict"] == "REVISE":
-            # Check if any critical dimension is below 0.5
-            if not any(s < 0.5 for s in data["dimension_scores"].values()):
-                data["verdict"] = "PASS"
+        data: dict[str, Any] = {
+            "verdict": raw.get("verdict", "FAIL"),
+            "score": raw.get("score", 0.0),
+            "dimension_scores": raw.get("dimension_scores", {}),
+            "feedback": raw.get("feedback", ""),
+            "passing_dimensions": raw.get("passing_dimensions", []),
+            "failing_dimensions": raw.get("failing_dimensions", []),
+        }
+
+        if data["verdict"] not in {"PASS", "REVISE", "FAIL"}:
+            return self._invalid_response(f"Invalid verdict: {data['verdict']!r}")
+
+        try:
+            data["score"] = float(data["score"])
+        except (TypeError, ValueError):
+            return self._invalid_response("Reviewer score must be numeric.")
+
+        if not isinstance(data["dimension_scores"], dict):
+            return self._invalid_response("dimension_scores must be an object.")
+
+        normalized_scores: dict[str, float] = {}
+        rubric_names = {dim["name"] for dim in rubric}
+        for name, score in data["dimension_scores"].items():
+            if name not in rubric_names:
+                continue
+            try:
+                value = float(score)
+            except (TypeError, ValueError):
+                return self._invalid_response(f"Invalid dimension score for {name!r}.")
+            if value < 0.0 or value > 1.0:
+                return self._invalid_response(f"Dimension score for {name!r} must be between 0.0 and 1.0.")
+            normalized_scores[name] = value
+        data["dimension_scores"] = normalized_scores
+
+        if not isinstance(data["feedback"], str):
+            data["feedback"] = str(data["feedback"])
+
+        for key in ("passing_dimensions", "failing_dimensions"):
+            if not isinstance(data[key], list):
+                return self._invalid_response(f"{key} must be an array.")
+            data[key] = [str(item) for item in data[key]]
+
+        critical_dimensions = {dim["name"] for dim in rubric if dim.get("critical")}
+        has_critical_failure = any(
+            data["dimension_scores"].get(name, 0.0) < 0.5 for name in critical_dimensions
+        )
+
+        if data["verdict"] == "PASS" and (data["score"] < quality_threshold or has_critical_failure):
+            data["verdict"] = "REVISE"
+        elif data["verdict"] == "REVISE" and data["score"] >= quality_threshold and not has_critical_failure:
+            data["verdict"] = "PASS"
+
+        if data["verdict"] != "PASS" and not data["feedback"].strip():
+            data["feedback"] = "Reviewer requested changes but did not provide actionable feedback. Re-run the review."
 
         return data
+
+    def _invalid_response(self, message: str) -> dict:
+        return {
+            "verdict": "FAIL",
+            "score": 0.0,
+            "dimension_scores": {},
+            "feedback": message,
+            "passing_dimensions": [],
+            "failing_dimensions": [],
+        }
