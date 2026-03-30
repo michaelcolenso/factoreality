@@ -7,6 +7,7 @@ and bundles everything into a delivery ZIP package.
 from __future__ import annotations
 
 import json
+import re
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -36,15 +37,14 @@ class AssemblerAgent(BaseAgent):
 
         # Create ZIP archive if there are multiple deliverables
         if len(deliverables) > 1:
-            zip_path = self._create_zip(output_dir, deliverables, spec)
-        else:
-            zip_path = None
+            self._create_zip(output_dir, deliverables, spec)
 
         # Write a JSON manifest for programmatic consumption
         json_manifest = {
             "generated": datetime.utcnow().isoformat() + "Z",
             "product_type": spec.get("product_type", "unknown"),
             "topic": spec.get("topic_angle", "unknown"),
+            "expected_deliverables": spec.get("deliverables", []),
             "files": [
                 {
                     "filename": p.name,
@@ -75,27 +75,111 @@ class AssemblerAgent(BaseAgent):
     # ------------------------------------------------------------------
 
     def _collect_deliverables(self, spec: dict) -> list[Path]:
-        """Find all output files that should be included in the final package."""
+        """Find all output files that should be included in the final package.
+
+        Prioritize deliverables and formats explicitly requested by the spec.
+        """
         output_dir = self.project_dir / "output"
-        candidates = []
-
-        # Formatted primary deliverable
-        for ext in (".pdf", ".docx", ".md", ".pptx", ".xlsx"):
-            for p in output_dir.glob(f"*{ext}"):
-                if p.name != "README.md" and p.stat().st_size > 0:
-                    candidates.append(p)
-
-        # Supplementary deliverables from assets
         assets_dir = self.project_dir / "assets"
-        for p in assets_dir.rglob("*"):
-            if p.is_file() and p.stat().st_size > 0:
-                candidates.append(p)
+        deliverable_specs = self._normalize_deliverables(spec.get("deliverables", []))
+        allowed_formats = self._allowed_extensions(spec)
 
-        return candidates
+        candidates = [
+            p for p in output_dir.iterdir()
+            if p.is_file() and p.stat().st_size > 0 and p.name not in {"README.md", "manifest.json"}
+        ] if output_dir.exists() else []
+        asset_candidates = [
+            p for p in assets_dir.rglob("*") if p.is_file() and p.stat().st_size > 0
+        ] if assets_dir.exists() else []
+
+        selected: list[Path] = []
+        used: set[Path] = set()
+
+        for deliverable in deliverable_specs:
+            match = self._match_deliverable(deliverable, candidates, asset_candidates, allowed_formats)
+            if match and match not in used:
+                selected.append(match)
+                used.add(match)
+
+        if not selected:
+            for p in candidates:
+                if p.suffix.lower() in allowed_formats and p not in used:
+                    selected.append(p)
+                    used.add(p)
+
+        # Include relevant supporting assets only if the spec suggests them.
+        for deliverable in deliverable_specs:
+            if deliverable["kind"] != "supporting":
+                continue
+            match = self._match_deliverable(deliverable, candidates, asset_candidates, allowed_formats | self._asset_extensions())
+            if match and match not in used:
+                selected.append(match)
+                used.add(match)
+
+        return selected
+
+    def _normalize_deliverables(self, deliverables: list[str]) -> list[dict]:
+        normalized = []
+        for i, item in enumerate(deliverables):
+            text = item.strip()
+            lower = text.lower()
+            kind = "primary" if i == 0 else "supporting"
+            if any(word in lower for word in ("worksheet", "template", "checklist", "resource", "bonus", "supporting")):
+                kind = "supporting"
+            normalized.append({"raw": text, "keywords": self._keywords(text), "kind": kind})
+        return normalized
+
+    def _allowed_extensions(self, spec: dict) -> set[str]:
+        formats = spec.get("hard_constraints", {}).get("formats", [])
+        allowed: set[str] = set()
+        for fmt in formats:
+            token = fmt.strip().lower().lstrip(".")
+            if token in {"pdf", "docx", "pptx", "xlsx", "md"}:
+                allowed.add(f".{token}")
+        return allowed or {".pdf", ".md", ".docx"}
+
+    def _asset_extensions(self) -> set[str]:
+        return {".pdf", ".md", ".docx", ".pptx", ".xlsx", ".csv", ".txt", ".png", ".jpg", ".jpeg"}
+
+    def _match_deliverable(
+        self,
+        deliverable: dict,
+        candidates: list[Path],
+        asset_candidates: list[Path],
+        allowed_formats: set[str],
+    ) -> Path | None:
+        pool = candidates + asset_candidates
+        ranked: list[tuple[int, Path]] = []
+        for path in pool:
+            if path.suffix.lower() not in allowed_formats:
+                continue
+            score = self._deliverable_match_score(deliverable, path)
+            if score > 0:
+                ranked.append((score, path))
+        ranked.sort(key=lambda item: (-item[0], item[1].name))
+        return ranked[0][1] if ranked else None
+
+    def _deliverable_match_score(self, deliverable: dict, path: Path) -> int:
+        score = 0
+        name_tokens = set(self._keywords(path.stem))
+        if deliverable["kind"] == "primary" and path.parent.name == "output":
+            score += 3
+        if path.suffix.lower() in {".pdf", ".docx", ".md"}:
+            score += 1
+        for keyword in deliverable["keywords"]:
+            if keyword in name_tokens:
+                score += 2
+        if not deliverable["keywords"] and path.parent.name == "output":
+            score += 1
+        return score
+
+    def _keywords(self, text: str) -> list[str]:
+        return [token for token in re.findall(r"[a-z0-9]+", text.lower()) if len(token) > 2]
 
     def _build_manifest(self, deliverables: list[Path], spec: dict) -> str:
         product_type = spec.get("product_type", "Digital Product")
         topic = spec.get("topic_angle", "")
+        expected = spec.get("deliverables", [])
 
         lines = [
             f"# Package Contents",
@@ -104,9 +188,17 @@ class AssemblerAgent(BaseAgent):
             f"**Type:** {product_type}",
             f"**Generated:** {datetime.utcnow().strftime('%Y-%m-%d')}",
             f"",
-            f"## Files",
+            f"## Expected Deliverables",
             f"",
         ]
+
+        if expected:
+            for item in expected:
+                lines.append(f"- {item}")
+        else:
+            lines.append("- No explicit deliverables listed in spec.md")
+
+        lines += ["", "## Files", ""]
 
         for p in deliverables:
             size_kb = p.stat().st_size // 1024 if p.exists() else 0
@@ -116,8 +208,7 @@ class AssemblerAgent(BaseAgent):
             "",
             "## Usage",
             "",
-            "Open the primary PDF file to read the main content.",
-            "Supplementary files (worksheets, templates) are labeled accordingly.",
+            "Open the primary deliverable first, then use any supporting assets as referenced in the spec.",
             "",
             "---",
             "*Generated by Content Factory*",

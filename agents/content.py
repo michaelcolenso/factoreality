@@ -10,7 +10,6 @@ import re
 from pathlib import Path
 
 from .base import BaseAgent
-from utils.placeholder_scan import scan_for_placeholders
 
 SYSTEM_PROMPT = """You are the Writer for the Content Factory pipeline.
 
@@ -32,20 +31,6 @@ Rules:
 - End each section with a transition sentence to the next section (except the last).
 """
 
-COMPILE_SYSTEM_PROMPT = """You are the Writer for the Content Factory pipeline.
-
-You have written all sections individually. Your task now is to compile them
-into a single coherent draft. Do the following:
-
-1. Concatenate all sections in outline order.
-2. Ensure transitions between sections are smooth.
-3. Verify internal cross-references are consistent.
-4. Check that the same concept is referred to by the same term throughout.
-5. Do NOT change the substance of any section — only smooth transitions and
-   fix inconsistencies.
-6. Remove any duplicate content if sections overlap (keep the first occurrence).
-"""
-
 REVISE_SYSTEM_PROMPT = """You are the Writer for the Content Factory pipeline.
 
 Your draft was reviewed and returned with specific feedback.
@@ -59,6 +44,7 @@ class ContentAgent(BaseAgent):
     default_model = "claude-sonnet-4-6"
 
     OUTPUT_PATH = "draft/draft.md"
+    SECTION_DIR = "draft/sections"
 
     def run(self, spec: dict, dry_run: bool = False) -> Path:
         out = self.project_dir / self.OUTPUT_PATH
@@ -74,7 +60,9 @@ class ContentAgent(BaseAgent):
         research_text = self.read_file(research_path) if research_path.exists() else ""
 
         sections = self._parse_sections(outline_text)
-        section_drafts = []
+        section_paths: list[Path] = []
+        section_dir = self.project_dir / self.SECTION_DIR
+        section_dir.mkdir(parents=True, exist_ok=True)
 
         for i, section in enumerate(sections):
             section_content = self.call_llm(
@@ -89,18 +77,11 @@ class ContentAgent(BaseAgent):
                 ),
                 max_tokens=4096,
             )
-            section_drafts.append(section_content)
+            section_path = section_dir / f"{i + 1:02d}-{self._slugify(section['title'])}.md"
+            self.write_file(section_path, section_content.strip() + "\n")
+            section_paths.append(section_path)
 
-        # Compile all sections into one draft
-        if len(section_drafts) > 1:
-            full_draft = self.call_llm(
-                system_prompt=COMPILE_SYSTEM_PROMPT,
-                user_message="\n\n---\n\n".join(section_drafts),
-                max_tokens=16384,
-            )
-        else:
-            full_draft = section_drafts[0] if section_drafts else ""
-
+        full_draft = self._assemble_sections(section_paths)
         self.write_file(out, full_draft)
         return out
 
@@ -153,6 +134,19 @@ class ContentAgent(BaseAgent):
             sections.append(current)
 
         return sections
+
+    def _assemble_sections(self, section_paths: list[Path]) -> str:
+        """Assemble the draft deterministically from section files."""
+        assembled: list[str] = []
+        for path in section_paths:
+            text = self.read_file(path).strip()
+            if text:
+                assembled.append(text)
+        return "\n\n".join(assembled).strip() + "\n"
+
+    def _slugify(self, text: str) -> str:
+        slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+        return slug or "section"
 
     def _stub(self, spec: dict) -> str:
         product_type = spec.get("product_type", "ebook")

@@ -10,7 +10,12 @@ from pathlib import Path
 
 from .base import BaseAgent
 
-SYSTEM_PROMPT = """You are the Editor for the Content Factory pipeline.
+DRAFT_START = "<<<EDITED_DRAFT_START>>>"
+DRAFT_END = "<<<EDITED_DRAFT_END>>>"
+NOTES_START = "<<<EDITORIAL_NOTES_START>>>"
+NOTES_END = "<<<EDITORIAL_NOTES_END>>>"
+
+SYSTEM_PROMPT = f"""You are the Editor for the Content Factory pipeline.
 
 You are performing a full editorial pass on a draft digital knowledge product.
 Your inputs are the product spec and the first draft.
@@ -43,24 +48,34 @@ substantive rewriting rather than a simple correction.
 - Check that each section opening delivers on the promise of the previous transition.
 - Smooth any abrupt register shifts (sudden changes from formal to informal).
 
-Output:
-1. The fully edited draft as clean Markdown (this is draft/draft-edited.md).
-2. An editorial notes file listing all significant decisions, removed claims,
-   and unresolved flags (this is editorial/editorial-notes.md).
-   Format: one line per issue, categorized by pass.
-
 Rules:
 - Do not change the structure (section order or headings) — that was locked at Gate 2.
 - Do not add content not already in the draft.
 - Do not change the voice or tone unless it deviates from the spec.
 - Scope changes to the minimum needed to pass editorial QA.
+
+Return your response using these exact sentinels and nothing else outside them:
+{DRAFT_START}
+[full edited draft markdown]
+{DRAFT_END}
+{NOTES_START}
+[notes and flags]
+{NOTES_END}
 """
 
-REVISE_SYSTEM_PROMPT = """You are the Editor for the Content Factory pipeline.
+REVISE_SYSTEM_PROMPT = f"""You are the Editor for the Content Factory pipeline.
 
 Your edited draft was reviewed and returned with specific feedback.
 Apply only the changes needed to address the reviewer's feedback.
 Do not re-edit sections that passed review.
+
+Return your response using these exact sentinels and nothing else outside them:
+{DRAFT_START}
+[revised draft]
+{DRAFT_END}
+{NOTES_START}
+[updated notes]
+{NOTES_END}
 """
 
 
@@ -88,10 +103,7 @@ class EditorialAgent(BaseAgent):
             system_prompt=SYSTEM_PROMPT,
             user_message=(
                 f"Spec:\n\n{spec_text}\n\n"
-                f"Draft:\n\n{draft_text}\n\n"
-                "---\nReturn your response in two clearly separated sections:\n\n"
-                "# EDITED DRAFT\n[full edited draft markdown]\n\n"
-                "# EDITORIAL NOTES\n[notes and flags]"
+                f"Draft:\n\n{draft_text}\n"
             ),
             max_tokens=16384,
         )
@@ -119,10 +131,7 @@ class EditorialAgent(BaseAgent):
             user_message=(
                 f"Spec:\n\n{spec_text}\n\n"
                 f"Reviewer feedback:\n{feedback}\n\n"
-                f"Current edited draft:\n\n{current}\n\n"
-                "---\nReturn:\n\n"
-                "# EDITED DRAFT\n[revised draft]\n\n"
-                "# EDITORIAL NOTES\n[updated notes]"
+                f"Current edited draft:\n\n{current}\n"
             ),
             max_tokens=16384,
         )
@@ -135,11 +144,17 @@ class EditorialAgent(BaseAgent):
 
     def _split_result(self, result: str) -> tuple[str, str]:
         """Split LLM response into (edited_draft, editorial_notes)."""
+        if all(marker in result for marker in (DRAFT_START, DRAFT_END, NOTES_START, NOTES_END)):
+            draft = result.split(DRAFT_START, 1)[1].split(DRAFT_END, 1)[0].strip()
+            notes = result.split(NOTES_START, 1)[1].split(NOTES_END, 1)[0].strip()
+            return draft, notes or "# Editorial Notes\n\nNo issues flagged."
+
+        # Legacy fallback for older outputs
         marker = "# EDITORIAL NOTES"
         if marker in result:
             parts = result.split(marker, 1)
             draft = parts[0].replace("# EDITED DRAFT", "").strip()
             notes = (marker + parts[1]).strip()
             return draft, notes
-        # Fallback: everything is the draft, no notes
+
         return result.replace("# EDITED DRAFT", "").strip(), "# Editorial Notes\n\nNo issues flagged."
