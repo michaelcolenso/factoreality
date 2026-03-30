@@ -19,6 +19,16 @@ ebook
 ## Topic & Angle
 Test angle
 
+## Target Audience
+- Who: founders
+- Needs: clarity
+
+## Tone & Voice
+- Style: authoritative
+
+## Deliverables
+1. PDF ebook
+
 ## Quality Thresholds
 - Minimum gate confidence: 0.85
 - Max retry cycles per gate: 5

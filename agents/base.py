@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from typing import Any
+
+from utils.model_router import ModelRouter
 
 
 class BaseAgent:
@@ -24,7 +24,9 @@ class BaseAgent:
 
     def __init__(self, project_dir: Path) -> None:
         self.project_dir = project_dir
-        self.model = os.environ.get("CONTENT_FACTORY_MODEL", self.default_model)
+        config = ModelRouter.resolve(self.name, self.default_model)
+        self.provider = config.provider
+        self.model = config.model
 
     # ------------------------------------------------------------------
     # Subclass interface
@@ -53,21 +55,45 @@ class BaseAgent:
         model: str | None = None,
         max_tokens: int = 8192,
     ) -> str:
-        """
-        Call the Anthropic Claude API and return the text response.
+        """Call the configured provider and return the text response."""
+        provider = self.provider
+        selected_model = model or self.model
 
-        Requires ANTHROPIC_API_KEY in the environment.
-        """
-        import anthropic  # lazy import — only needed at runtime
+        if provider == "anthropic":
+            import anthropic  # lazy import — only needed at runtime
 
-        client = anthropic.Anthropic()
-        response = client.messages.create(
-            model=model or self.model,
-            max_tokens=max_tokens,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_message}],
+            client = anthropic.Anthropic()
+            response = client.messages.create(
+                model=selected_model,
+                max_tokens=max_tokens,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_message}],
+            )
+            return response.content[0].text
+
+        if provider == "openai":
+            try:
+                from openai import OpenAI  # type: ignore
+            except ImportError as exc:
+                raise RuntimeError(
+                    "OpenAI provider selected but `openai` package is not installed. "
+                    "Add it to requirements.txt to use CONTENT_FACTORY_PROVIDER=openai."
+                ) from exc
+
+            client = OpenAI()
+            response = client.responses.create(
+                model=selected_model,
+                input=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message},
+                ],
+                max_output_tokens=max_tokens,
+            )
+            return getattr(response, "output_text", "")
+
+        raise RuntimeError(
+            f"Unsupported provider: {provider!r}. Supported providers: anthropic, openai."
         )
-        return response.content[0].text
 
     # ------------------------------------------------------------------
     # File helpers
