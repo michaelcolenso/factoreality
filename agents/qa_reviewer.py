@@ -87,11 +87,7 @@ class QAReviewerAgent(BaseAgent):
 
         spec_text = self.read_spec()
         plan_text = self.read_plan()
-        stage_output = (
-            self.read_file(stage_output_path)
-            if stage_output_path.exists()
-            else "(file not found)"
-        )
+        stage_output = self._read_stage_output(stage_output_path)
         gate_checks = gate_checks or {"passed": [], "failed": [], "summary": "No deterministic checks were run."}
 
         response = self.call_llm(
@@ -119,6 +115,19 @@ class QAReviewerAgent(BaseAgent):
                 f"| {dim['name']} | {dim['weight']} | {dim['measures']} |"
             )
         return "\n".join(lines)
+
+    def _read_stage_output(self, stage_output_path: Path) -> str:
+        if not stage_output_path.exists():
+            return "(file not found)"
+        if stage_output_path.is_dir():
+            entries = []
+            for child in sorted(stage_output_path.rglob("*")):
+                if child.is_file():
+                    rel = child.relative_to(stage_output_path)
+                    entries.append(f"- {rel} ({child.stat().st_size} bytes)")
+            listing = "\n".join(entries) if entries else "(empty directory)"
+            return f"Directory listing for {stage_output_path.name}:\n{listing}"
+        return self.read_file(stage_output_path)
 
     def _parse_response(self, response: str, quality_threshold: float, rubric: list[dict]) -> dict:
         """Parse and validate JSON response from the reviewer LLM."""

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+
+from utils.fake_llm import FakeLLM
 
 
 class BaseAgent:
@@ -24,6 +25,7 @@ class BaseAgent:
 
     def __init__(self, project_dir: Path) -> None:
         self.project_dir = project_dir
+        self.provider = os.environ.get("CONTENT_FACTORY_PROVIDER", "anthropic")
         self.model = os.environ.get("CONTENT_FACTORY_MODEL", self.default_model)
 
     # ------------------------------------------------------------------
@@ -53,21 +55,28 @@ class BaseAgent:
         model: str | None = None,
         max_tokens: int = 8192,
     ) -> str:
-        """
-        Call the Anthropic Claude API and return the text response.
+        """Call the configured provider and return the text response."""
+        provider = self.provider
+        selected_model = model or self.model
 
-        Requires ANTHROPIC_API_KEY in the environment.
-        """
-        import anthropic  # lazy import — only needed at runtime
+        if provider == "fake":
+            return FakeLLM.respond(system_prompt=system_prompt, user_message=user_message)
 
-        client = anthropic.Anthropic()
-        response = client.messages.create(
-            model=model or self.model,
-            max_tokens=max_tokens,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_message}],
+        if provider == "anthropic":
+            import anthropic  # lazy import — only needed at runtime
+
+            client = anthropic.Anthropic()
+            response = client.messages.create(
+                model=selected_model,
+                max_tokens=max_tokens,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_message}],
+            )
+            return response.content[0].text
+
+        raise RuntimeError(
+            f"Unsupported provider: {provider!r}. Supported providers: fake, anthropic."
         )
-        return response.content[0].text
 
     # ------------------------------------------------------------------
     # File helpers
