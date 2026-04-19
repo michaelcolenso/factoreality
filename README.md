@@ -90,6 +90,13 @@ Notes:
 When complete, check `output/` for deliverables and `status.md` for the
 full audit log of every gate, score, decision, and retry.
 
+Stage 6 now also emits monetization artifacts by default:
+- `channel-publish-manifest.json` (storefront-ready metadata + pricing anchors)
+- `offer-stack.md` (tripwire/core/upsell packaging)
+- `conversion-feedback-loop.md` (weekly optimization workflow)
+- `growth-engine.md` (autonomous experiment plan)
+- `metrics-template.csv` (analytics schema for regeneration loops)
+
 ---
 
 ## Project structure
@@ -189,6 +196,24 @@ Rough estimates per run for a 15,000-word ebook:
 | Human time | $0 |
 
 ---
+
+
+## Revenue acceleration features (high impact)
+
+1. **Built-in channel publishing + storefront sync**
+   - One-click export + publish to Gumroad, Lemon Squeezy, Shopify Digital Downloads, and Notion marketplaces.
+   - Add per-channel metadata templates (title, subtitle, thumbnail prompts, SEO description, pricing anchor copy).
+   - Why this lifts revenue: distribution friction is usually the bottleneck; shipping directly to where buyers already are increases conversion velocity.
+
+2. **Automated offer stack generator (tripwire → core → upsell)**
+   - Generate not just one product, but a monetization ladder: lead magnet, low-ticket offer, core product, and optional order bump.
+   - Auto-create matching checkout copy, email sequence drafts, and post-purchase upsell pages.
+   - Why this lifts revenue: average order value (AOV) rises when each run outputs a complete funnel rather than a single SKU.
+
+3. **Conversion feedback loop with performance-aware regeneration**
+   - Ingest sales + funnel analytics (CTR, CVR, refund rate, EPC) from Stripe/Gumroad/email tools.
+   - Feed winning hooks/headlines/modules back into future specs and revise weak assets automatically.
+   - Why this lifts revenue: the system compounds winners over time, turning the pipeline into a learning engine rather than one-off content generation.
 
 ## Design
 
