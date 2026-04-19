@@ -90,6 +90,13 @@ Notes:
 When complete, check `output/` for deliverables and `status.md` for the
 full audit log of every gate, score, decision, and retry.
 
+Stage 6 now also emits monetization artifacts by default:
+- `channel-publish-manifest.json` (storefront-ready metadata + pricing anchors)
+- `offer-stack.md` (tripwire/core/upsell packaging)
+- `conversion-feedback-loop.md` (weekly optimization workflow)
+- `growth-engine.md` (autonomous experiment plan)
+- `metrics-template.csv` (analytics schema for regeneration loops)
+
 ---
 
 ## Project structure
