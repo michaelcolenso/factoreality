@@ -1,0 +1,92 @@
+{
+  "generated": "2026-06-06T21:52:36.702153Z",
+  "product_type": "resource-guide",
+  "topic": "The Medical Bill Negotiation & Dispute Kit",
+  "expected_deliverables": [
+    "50-70 page guide: The Medical Bill Negotiation & Dispute Kit",
+    "Bill Audit Checklist",
+    "Itemized Bill Request Letter Template",
+    "Negotiation Call Scripts Pack",
+    "Financial Hardship / Charity Care Application Guide + letter",
+    "Insurance Denial Appeal Letter Pack",
+    "No Surprises Act quick-rights reference sheet",
+    "Payment Plan Negotiation script + settlement framework",
+    "Medical Debt & Credit Protection quick guide",
+    "Collection Agency Validation/Dispute Letter templates",
+    "Bonus: Insurance Denial Appeal Deep Dive",
+    "Bonus: Collection Defense Pack"
+  ],
+  "files": [
+    {
+      "filename": "README.md",
+      "path": "README.md",
+      "size_bytes": 4368
+    },
+    {
+      "filename": "The-Medical-Bill-Negotiation-and-Dispute-Kit.md",
+      "path": "The-Medical-Bill-Negotiation-and-Dispute-Kit.md",
+      "size_bytes": 58659
+    },
+    {
+      "filename": "Bonus-1-Insurance-Denial-Appeal-Deep-Dive.md",
+      "path": "bonus/Bonus-1-Insurance-Denial-Appeal-Deep-Dive.md",
+      "size_bytes": 5135
+    },
+    {
+      "filename": "Bonus-2-Collection-Defense-Pack.md",
+      "path": "bonus/Bonus-2-Collection-Defense-Pack.md",
+      "size_bytes": 4610
+    },
+    {
+      "filename": "03-Negotiation-Call-Scripts-Pack.md",
+      "path": "scripts/03-Negotiation-Call-Scripts-Pack.md",
+      "size_bytes": 5083
+    },
+    {
+      "filename": "07-Payment-Plan-and-Settlement-Framework.md",
+      "path": "scripts/07-Payment-Plan-and-Settlement-Framework.md",
+      "size_bytes": 3849
+    },
+    {
+      "filename": "Quick-Scripts.txt",
+      "path": "scripts/Quick-Scripts.txt",
+      "size_bytes": 3829
+    },
+    {
+      "filename": "01-Bill-Audit-Checklist.md",
+      "path": "templates/01-Bill-Audit-Checklist.md",
+      "size_bytes": 3135
+    },
+    {
+      "filename": "02-Itemized-Bill-Request-Letter.md",
+      "path": "templates/02-Itemized-Bill-Request-Letter.md",
+      "size_bytes": 2542
+    },
+    {
+      "filename": "04-Charity-Care-Application-Guide.md",
+      "path": "templates/04-Charity-Care-Application-Guide.md",
+      "size_bytes": 4651
+    },
+    {
+      "filename": "05-Insurance-Denial-Appeal-Letter-Pack.md",
+      "path": "templates/05-Insurance-Denial-Appeal-Letter-Pack.md",
+      "size_bytes": 5219
+    },
+    {
+      "filename": "06-No-Surprises-Act-Quick-Rights-Sheet.md",
+      "path": "templates/06-No-Surprises-Act-Quick-Rights-Sheet.md",
+      "size_bytes": 3290
+    },
+    {
+      "filename": "08-Medical-Debt-Credit-Protection-Guide.md",
+      "path": "templates/08-Medical-Debt-Credit-Protection-Guide.md",
+      "size_bytes": 3467
+    },
+    {
+      "filename": "09-Collection-Validation-and-Dispute-Letters.md",
+      "path": "templates/09-Collection-Validation-and-Dispute-Letters.md",
+      "size_bytes": 4930
+    }
+  ],
+  "file_count": 14
+}
