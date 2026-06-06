@@ -81,7 +81,7 @@ Return your response using these exact sentinels and nothing else outside them:
 
 class EditorialAgent(BaseAgent):
     name = "EditorialAgent"
-    default_model = "claude-opus-4-6"
+    default_model = "agentic-harness-review"
 
     DRAFT_OUT = "draft/draft-edited.md"
     NOTES_OUT = "editorial/editorial-notes.md"
@@ -99,7 +99,7 @@ class EditorialAgent(BaseAgent):
         draft_path = self.project_dir / "draft/draft.md"
         draft_text = self.read_file(draft_path) if draft_path.exists() else ""
 
-        result = self.call_llm(
+        result = self.call_agent(
             system_prompt=SYSTEM_PROMPT,
             user_message=(
                 f"Spec:\n\n{spec_text}\n\n"
@@ -126,7 +126,7 @@ class EditorialAgent(BaseAgent):
         current = self.read_file(output_path)
         spec_text = self.read_spec()
 
-        result = self.call_llm(
+        result = self.call_agent(
             system_prompt=REVISE_SYSTEM_PROMPT,
             user_message=(
                 f"Spec:\n\n{spec_text}\n\n"
@@ -143,7 +143,7 @@ class EditorialAgent(BaseAgent):
         return output_path
 
     def _split_result(self, result: str) -> tuple[str, str]:
-        """Split LLM response into (edited_draft, editorial_notes)."""
+        """Split harness response into (edited_draft, editorial_notes)."""
         if all(marker in result for marker in (DRAFT_START, DRAFT_END, NOTES_START, NOTES_END)):
             draft = result.split(DRAFT_START, 1)[1].split(DRAFT_END, 1)[0].strip()
             notes = result.split(NOTES_START, 1)[1].split(NOTES_END, 1)[0].strip()

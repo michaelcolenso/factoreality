@@ -59,7 +59,7 @@ Your job is NOT to be encouraging — it is to catch failures before they compou
 class QAReviewerAgent(BaseAgent):
     name = "QAReviewerAgent"
     # Always use the best available model — never economize on the reviewer
-    default_model = "claude-opus-4-6"
+    default_model = "agentic-harness-review"
 
     def review_gate(
         self,
@@ -90,7 +90,7 @@ class QAReviewerAgent(BaseAgent):
         stage_output = self._read_stage_output(stage_output_path)
         gate_checks = gate_checks or {"passed": [], "failed": [], "summary": "No deterministic checks were run."}
 
-        response = self.call_llm(
+        response = self.call_agent(
             system_prompt=system_prompt,
             user_message=(
                 f"## spec.md\n\n{spec_text}\n\n"
@@ -130,7 +130,7 @@ class QAReviewerAgent(BaseAgent):
         return self.read_file(stage_output_path)
 
     def _parse_response(self, response: str, quality_threshold: float, rubric: list[dict]) -> dict:
-        """Parse and validate JSON response from the reviewer LLM."""
+        """Parse and validate JSON response from the reviewer harness agent."""
         text = response.strip()
         if text.startswith("```"):
             text = text.split("```", 2)[1]

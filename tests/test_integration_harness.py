@@ -8,8 +8,8 @@ from orchestrator import Orchestrator
 from agents.qa_reviewer import QAReviewerAgent
 
 
-class FakeProviderIntegrationTests(unittest.TestCase):
-    def test_full_pipeline_completes_with_fake_provider(self) -> None:
+class HarnessProviderIntegrationTests(unittest.TestCase):
+    def test_full_pipeline_completes_with_default_harness_provider(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project_dir = Path(tmp)
             (project_dir / "spec.md").write_text(
@@ -52,15 +52,12 @@ A practical workflow for testing the content factory
                 encoding="utf-8",
             )
 
-            old_provider = os.environ.get("CONTENT_FACTORY_PROVIDER")
+            old_provider = os.environ.pop("CONTENT_FACTORY_PROVIDER", None)
             try:
-                os.environ["CONTENT_FACTORY_PROVIDER"] = "fake"
                 orchestrator = Orchestrator(project_dir=project_dir)
                 ok = orchestrator.run()
             finally:
-                if old_provider is None:
-                    os.environ.pop("CONTENT_FACTORY_PROVIDER", None)
-                else:
+                if old_provider is not None:
                     os.environ["CONTENT_FACTORY_PROVIDER"] = old_provider
 
             self.assertTrue(ok)
@@ -75,6 +72,9 @@ A practical workflow for testing the content factory
             self.assertTrue((project_dir / "output" / "formatted.md").exists())
             self.assertTrue((project_dir / "output" / "README.md").exists())
             self.assertTrue((project_dir / "output" / "manifest.json").exists())
+            self.assertTrue((project_dir / ".harness" / "tasks.md").exists())
+            task_log = (project_dir / ".harness" / "tasks.md").read_text(encoding="utf-8")
+            self.assertIn("Provider: harness", task_log)
 
     def test_qa_reviewer_can_summarize_directory_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -86,6 +86,21 @@ A practical workflow for testing the content factory
             summary = reviewer._read_stage_output(output_dir)
             self.assertIn("Directory listing for output", summary)
             self.assertIn("formatted.md", summary)
+
+class HarnessProviderGuardTests(unittest.TestCase):
+    def test_external_providers_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            old_provider = os.environ.get("CONTENT_FACTORY_PROVIDER")
+            try:
+                os.environ["CONTENT_FACTORY_PROVIDER"] = "anthropic"
+                reviewer = QAReviewerAgent(Path(tmp))
+                with self.assertRaisesRegex(RuntimeError, "local agentic harness only"):
+                    reviewer.call_agent("system", "user")
+            finally:
+                if old_provider is None:
+                    os.environ.pop("CONTENT_FACTORY_PROVIDER", None)
+                else:
+                    os.environ["CONTENT_FACTORY_PROVIDER"] = old_provider
 
 
 if __name__ == "__main__":

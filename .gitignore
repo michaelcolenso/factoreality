@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.harness/
+status.json
+plan.md
+research/
+outline/
+draft/
+editorial/
+qa-reviews/
+output/

@@ -1,8 +1,8 @@
 # factoreality
 
-A fully autonomous agentic pipeline that turns a product spec into a finished,
+A harness-native agentic pipeline that turns a product spec into a finished,
 downloadable digital knowledge product — with zero human intervention between
-kickoff and delivery.
+kickoff and delivery and no outside LLM API dependency.
 
 Write the spec. Hit run. Come back to a finished product.
 
@@ -18,6 +18,8 @@ or data-driven reports.
 
 A sequential 6-stage pipeline coordinated by an orchestrator agent, with a
 dedicated QA Reviewer agent that replaces the human at every milestone gate.
+All planning, drafting, reviewing, and packaging tasks are executed by the local
+agentic harness rather than delegated to a hosted model API.
 
 ```
 Spec → Plan → Research → Outline → Draft → Editorial → Format → Package
@@ -37,9 +39,10 @@ product that failed its gates.
 pip install -r requirements.txt
 ```
 
-Requires Python 3.11+ and an `ANTHROPIC_API_KEY` environment variable.
+Requires Python 3.11+. No `ANTHROPIC_API_KEY`, hosted model provider, or network
+access is required for the core pipeline.
 
-Pandoc + XeLaTeX are optional but enable PDF export (Stage 5).
+Pandoc + XeLaTeX are optional system tools that enable PDF export (Stage 5).
 
 ### 2. Provide input (choose one path)
 
@@ -74,7 +77,7 @@ python orchestrator.py /path/to/project
 ```
 
 Options:
-- `--dry-run` — validate spec and plan without making LLM calls
+- `--dry-run` — validate spec and plan without making external LLM API calls
 - `--resume`  — continue from the last completed stage after a halt
 - `--brief "..."` — generate `spec.md` from a short product brief, then run
 - `--brief-file path/to/brief.md` — same as `--brief`, reading from a file
@@ -110,7 +113,7 @@ factoreality/
 ├── status.md                # Running audit log
 │
 ├── agents/
-│   ├── base.py              # Shared LLM call + file helpers
+│   ├── base.py              # Shared harness task + file helpers
 │   ├── planner.py           # Gate 0: generates plan.md
 │   ├── specification.py     # Pre-stage: generates spec.md from a brief
 │   ├── research.py          # Stage 1: research brief
@@ -129,6 +132,8 @@ factoreality/
 │   ├── file_io.py           # status.md writer + file helpers
 │   ├── spec_parser.py       # Parses spec.md into structured dict
 │   ├── placeholder_scan.py  # Detects placeholder text in drafts
+│   ├── agentic_harness.py   # Local task executor; no outside LLM API
+│   ├── fake_llm.py          # Backward-compatible alias to agentic_harness.py
 │   ├── link_checker.py      # Validates URLs return HTTP 200
 │   └── readability.py       # Flesch-Kincaid grade level scorer
 │
@@ -137,6 +142,7 @@ factoreality/
 │   ├── brief_template.md     # Optional brief for auto-generated specs
 │   └── product_profiles.json # Quality settings per product type
 │
+├── .harness/                # Local agentic task ledger
 ├── research/                # Stage 1 output
 ├── outline/                 # Stage 2 output
 ├── draft/                   # Stage 3 + 4 output
@@ -179,21 +185,24 @@ Gate 6 is PASS/FAIL only — no REVISE at the final gate.
 
 ---
 
-## Cost model (February 2026)
+## Harness-native execution model
 
-Rough estimates per run for a 15,000-word ebook:
+The pipeline is designed to run inside an agentic harness, not by proxying work
+to a hosted LLM API. Each stage still receives explicit role instructions, input
+context, acceptance criteria, and retry feedback, but `BaseAgent.call_agent()`
+records the task in `.harness/tasks.md` and resolves it through the local
+`AgenticHarness`. The historical `call_llm()` method remains only as a backward-
+compatible alias and does not make network calls.
 
-| Component | Approx. cost |
-|-----------|-------------|
-| Research | $3–8 |
-| Outline | $1–2 |
-| Content generation | $5–15 |
-| Editorial QA | $3–8 |
-| Formatting | $2–5 |
-| QA Reviewer (6 gates) | $5–12 |
-| Retries (avg 2/run) | $2–5 |
-| **Total** | **~$22–55** |
-| Human time | $0 |
+| Component | Outside API cost | Execution path |
+|-----------|------------------|----------------|
+| Research | $0 | Local harness synthesis + deterministic gate checks |
+| Outline | $0 | Local harness synthesis + deterministic gate checks |
+| Content generation | $0 | Section-by-section local harness tasks |
+| Editorial QA | $0 | Local harness editorial pass |
+| Formatting | $0 | Local Markdown formatting; optional local Pandoc PDF export |
+| QA Reviewer gates | $0 | Separate local reviewer task + deterministic checks |
+| Retries | $0 | Harness reruns targeted local revision tasks |
 
 ---
 
@@ -221,7 +230,7 @@ See the full architecture document: [The Content Factory v0.2](https://github.co
 
 Key design decisions:
 
-- **Separate QA Reviewer agent** — distinct model call, distinct prompt, fresh
+- **Separate QA Reviewer agent** — distinct harness task, distinct prompt, fresh
   context at every gate. Self-review doesn't work; a separate reviewer catches
   errors the writer normalizes.
 - **Durable file stack** — all state lives in files (spec, plan, implement,

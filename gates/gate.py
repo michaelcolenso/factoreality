@@ -1,7 +1,7 @@
 """
 GateRunner — automated verification checks that run BEFORE the QA Reviewer.
 
-These checks are deterministic (no LLM call): counts, scans, file existence.
+These checks are deterministic (no external LLM API call): counts, scans, file existence.
 They augment the QA Reviewer's judgment with hard facts.
 """
 

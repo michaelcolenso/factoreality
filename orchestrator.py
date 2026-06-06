@@ -311,7 +311,7 @@ class Orchestrator:
     # ------------------------------------------------------------------
 
     def _generate_plan(self, feedback: str = "") -> str:
-        """Call the planner LLM to generate plan.md content."""
+        """Call the planner harness agent to generate plan.md content."""
         from agents.planner import PlannerAgent
         planner = PlannerAgent(self.project_dir)
         return planner.generate(spec=self.spec, feedback=feedback, dry_run=self.dry_run)
@@ -445,7 +445,7 @@ def main() -> None:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Validate spec and plan without making any LLM calls or writing output files.",
+        help="Validate spec and plan without making any external LLM API calls or writing output files.",
     )
     parser.add_argument(
         "--resume",
