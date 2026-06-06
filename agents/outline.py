@@ -63,7 +63,7 @@ The final outline will be locked after this revision passes the QA gate.
 
 class OutlineAgent(BaseAgent):
     name = "OutlineAgent"
-    default_model = "claude-opus-4-6"
+    default_model = "agentic-harness-review"
 
     OUTPUT_PATH = "outline/outline.md"
 
@@ -77,7 +77,7 @@ class OutlineAgent(BaseAgent):
         research_path = self.project_dir / "research/research-brief.md"
         research_text = self.read_file(research_path) if research_path.exists() else "(no research brief found)"
 
-        content = self.call_llm(
+        content = self.call_agent(
             system_prompt=SYSTEM_PROMPT,
             user_message=(
                 f"Spec:\n\n{spec_text}\n\n"
@@ -100,7 +100,7 @@ class OutlineAgent(BaseAgent):
 
         current = self.read_file(output_path)
         spec_text = self.read_spec()
-        content = self.call_llm(
+        content = self.call_agent(
             system_prompt=REVISE_SYSTEM_PROMPT,
             user_message=(
                 f"Spec:\n\n{spec_text}\n\n"

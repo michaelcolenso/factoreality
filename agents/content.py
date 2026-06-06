@@ -41,7 +41,7 @@ Preserve all passing content exactly as written.
 
 class ContentAgent(BaseAgent):
     name = "ContentAgent"
-    default_model = "claude-sonnet-4-6"
+    default_model = "agentic-harness-draft"
 
     OUTPUT_PATH = "draft/draft.md"
     SECTION_DIR = "draft/sections"
@@ -65,7 +65,7 @@ class ContentAgent(BaseAgent):
         section_dir.mkdir(parents=True, exist_ok=True)
 
         for i, section in enumerate(sections):
-            section_content = self.call_llm(
+            section_content = self.call_agent(
                 system_prompt=SYSTEM_PROMPT,
                 user_message=(
                     f"Spec:\n\n{spec_text}\n\n"
@@ -99,7 +99,7 @@ class ContentAgent(BaseAgent):
         spec_text = self.read_spec()
         outline_text = self.read_file(self.project_dir / "outline/outline.md")
 
-        content = self.call_llm(
+        content = self.call_agent(
             system_prompt=REVISE_SYSTEM_PROMPT,
             user_message=(
                 f"Spec:\n\n{spec_text}\n\n"

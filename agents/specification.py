@@ -61,12 +61,12 @@ class SpecificationAgent(BaseAgent):
             self.write_file(out, self._stub_spec(brief))
             return out
 
-        strategy_memo = self.call_llm(
+        strategy_memo = self.call_agent(
             system_prompt=STRATEGIST_PROMPT,
             user_message=f"Create the strategy memo from this product brief:\n\n{brief}",
             max_tokens=2500,
         )
-        spec_md = self.call_llm(
+        spec_md = self.call_agent(
             system_prompt=SPEC_WRITER_PROMPT,
             user_message=(
                 "Use this strategy memo to create a complete spec.md file:\n\n"

@@ -52,7 +52,7 @@ Fix only the formatting issues identified. Do not touch the content.
 
 class FormatterAgent(BaseAgent):
     name = "FormatterAgent"
-    default_model = "claude-sonnet-4-6"
+    default_model = "agentic-harness-draft"
 
     OUTPUT_PATH = "output/formatted.md"
 
@@ -66,7 +66,7 @@ class FormatterAgent(BaseAgent):
         draft_path = self.project_dir / "draft/draft-edited.md"
         draft_text = self.read_file(draft_path) if draft_path.exists() else ""
 
-        result = self.call_llm(
+        result = self.call_agent(
             system_prompt=SYSTEM_PROMPT,
             user_message=(
                 f"Spec:\n\n{spec_text}\n\n"
@@ -96,7 +96,7 @@ class FormatterAgent(BaseAgent):
         current = self.read_file(output_path)
         spec_text = self.read_spec()
 
-        result = self.call_llm(
+        result = self.call_agent(
             system_prompt=REVISE_SYSTEM_PROMPT,
             user_message=(
                 f"Spec:\n\n{spec_text}\n\n"

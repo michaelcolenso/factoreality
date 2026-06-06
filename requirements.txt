@@ -1,1 +1,2 @@
-anthropic>=0.40.0
+# No runtime packages are required for harness-native execution.
+# Pandoc + XeLaTeX are optional system tools for PDF export.

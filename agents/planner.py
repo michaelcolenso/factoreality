@@ -43,7 +43,7 @@ class PlannerAgent(BaseAgent):
             else ""
         )
 
-        return self.call_llm(
+        return self.call_agent(
             system_prompt=SYSTEM_PROMPT,
             user_message=f"Here is the product spec:\n\n{spec_text}{feedback_section}",
             max_tokens=4096,

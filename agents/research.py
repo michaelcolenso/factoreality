@@ -66,7 +66,7 @@ Apply the minimal set of changes needed to satisfy the reviewer's feedback.
 
 class ResearchAgent(BaseAgent):
     name = "ResearchAgent"
-    default_model = "claude-opus-4-6"
+    default_model = "agentic-harness-review"
 
     OUTPUT_PATH = "research/research-brief.md"
 
@@ -77,7 +77,7 @@ class ResearchAgent(BaseAgent):
             return out
 
         spec_text = self.read_spec()
-        content = self.call_llm(
+        content = self.call_agent(
             system_prompt=SYSTEM_PROMPT,
             user_message=(
                 f"Produce a research brief for the following product spec:\n\n{spec_text}"
@@ -99,7 +99,7 @@ class ResearchAgent(BaseAgent):
 
         current = self.read_file(output_path)
         spec_text = self.read_spec()
-        content = self.call_llm(
+        content = self.call_agent(
             system_prompt=REVISE_SYSTEM_PROMPT,
             user_message=(
                 f"Spec:\n\n{spec_text}\n\n"
