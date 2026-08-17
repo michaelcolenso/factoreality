@@ -88,6 +88,17 @@ Notes:
 - Use `--regenerate-spec` with `--brief` or `--brief-file` to overwrite `spec.md`.
 - `--resume` continues from `status.md` and does not require regenerating `spec.md`.
 
+Or drive the whole thing from a browser:
+
+```bash
+python ui/server.py          # http://127.0.0.1:8420
+```
+
+The control room runs the same pipeline, streams the console live, shows every
+gate score against its threshold, lets you edit `spec.md` with live parse
+validation, and previews or downloads any artifact a run produced. Stdlib only —
+nothing to install. See [ui/README.md](ui/README.md).
+
 ### 4. Collect output
 
 When complete, check `output/` for deliverables and `status.md` for the
@@ -141,6 +152,12 @@ factoreality/
 │   ├── spec_template.md      # Blank spec to fill in manually
 │   ├── brief_template.md     # Optional brief for auto-generated specs
 │   └── product_profiles.json # Quality settings per product type
+│
+├── ui/                      # Local web control room (stdlib only)
+│   ├── server.py            # HTTP server: static assets + JSON API
+│   ├── runner.py            # Owns the orchestrator subprocess
+│   ├── state.py             # Projects the file stack into dashboard state
+│   └── static/              # index.html + app.js + styles.css
 │
 ├── .harness/                # Local agentic task ledger
 ├── research/                # Stage 1 output

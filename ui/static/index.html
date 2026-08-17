@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>factoreality — control room</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏭</text></svg>">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="mark">▚</span>
+    <div>
+      <h1>factoreality</h1>
+      <p class="project" id="project-path">—</p>
+    </div>
+  </div>
+
+  <div class="run-state">
+    <span class="pill" id="pipeline-pill" data-status="idle">idle</span>
+    <span class="run-meta" id="run-meta"></span>
+  </div>
+
+  <div class="controls">
+    <label class="toggle"><input type="checkbox" id="opt-dry"> dry run</label>
+    <label class="toggle"><input type="checkbox" id="opt-resume"> resume</label>
+    <button class="btn primary" id="btn-run">Run pipeline</button>
+    <button class="btn danger" id="btn-stop" disabled>Stop</button>
+    <button class="btn ghost" id="btn-reset" title="Delete generated artifacts and start clean">Reset</button>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button class="tab active" data-view="pipeline">Pipeline</button>
+  <button class="tab" data-view="spec">Spec</button>
+  <button class="tab" data-view="brief">Brief</button>
+  <button class="tab" data-view="artifacts">Artifacts</button>
+</nav>
+
+<main>
+  <!-- ── Pipeline ─────────────────────────────────────────────── -->
+  <section class="view active" id="view-pipeline">
+    <div class="track" id="track"></div>
+
+    <div class="split">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Stages &amp; gates</h2>
+          <span class="hint" id="threshold-hint"></span>
+        </div>
+        <div class="stage-list" id="stage-list"></div>
+      </div>
+
+      <div class="panel console-panel">
+        <div class="panel-head">
+          <h2>Console</h2>
+          <label class="toggle"><input type="checkbox" id="opt-follow" checked> follow</label>
+        </div>
+        <pre class="console" id="console"><span class="dim">No run yet. Hit “Run pipeline”.</span></pre>
+        <div class="halt" id="halt-box" hidden></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Spec ─────────────────────────────────────────────────── -->
+  <section class="view" id="view-spec">
+    <div class="split spec-split">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>spec.md</h2>
+          <div class="row">
+            <span class="validity" id="spec-validity"></span>
+            <button class="btn" id="btn-spec-revert">Revert</button>
+            <button class="btn primary" id="btn-spec-save">Save spec</button>
+          </div>
+        </div>
+        <textarea class="editor" id="spec-editor" spellcheck="false" placeholder="# Content Factory Spec&#10;&#10;## Product Type&#10;ebook"></textarea>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Parsed by the pipeline</h2></div>
+        <div class="scroll" id="spec-summary"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Brief ────────────────────────────────────────────────── -->
+  <section class="view" id="view-brief">
+    <div class="panel narrow">
+      <div class="panel-head">
+        <h2>product-brief.md</h2>
+        <div class="row">
+          <label class="toggle"><input type="checkbox" id="opt-regen"> overwrite existing spec.md</label>
+          <button class="btn primary" id="btn-brief-run">Generate spec &amp; run</button>
+        </div>
+      </div>
+      <p class="hint block">
+        A brief is the fast path: the SpecificationAgent expands it into <code>spec.md</code>
+        before Gate 0. Leave this empty to run against the spec you already have.
+      </p>
+      <textarea class="editor tall" id="brief-editor" spellcheck="false" placeholder="One or two paragraphs: what the product is, who it is for, what it must contain."></textarea>
+    </div>
+  </section>
+
+  <!-- ── Artifacts ────────────────────────────────────────────── -->
+  <section class="view" id="view-artifacts">
+    <div class="split artifacts-split">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Files</h2>
+          <input class="filter" id="artifact-filter" placeholder="filter…" spellcheck="false">
+        </div>
+        <div class="scroll" id="file-tree"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2 id="preview-title">Preview</h2>
+          <div class="row">
+            <label class="toggle"><input type="checkbox" id="opt-raw"> raw</label>
+            <a class="btn" id="btn-download" href="#" hidden>Download</a>
+          </div>
+        </div>
+        <div class="scroll preview" id="preview"><p class="dim">Select a file to preview it.</p></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="/app.js"></script>
+</body>
+</html>
