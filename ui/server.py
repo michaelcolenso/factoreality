@@ -28,7 +28,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from ui.runner import RunAlreadyActive, RunManager  # noqa: E402
+from ui.backends import LocalRunner, LocalStore, RunAlreadyActive, Runner, Store  # noqa: E402
 from ui.state import ProjectState  # noqa: E402
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -41,9 +41,11 @@ class ControlRoomHandler(BaseHTTPRequestHandler):
     server_version = "Factoreality/1.0"
     protocol_version = "HTTP/1.1"
 
-    # Injected by serve()
+    # Injected by build_server(). Typed against the protocols, not the local
+    # implementations — swapping the backend must not touch this class.
     state: ProjectState
-    runner: RunManager
+    store: Store
+    runner: Runner
 
     # ------------------------------------------------------------------
     # Routing
@@ -108,17 +110,16 @@ class ControlRoomHandler(BaseHTTPRequestHandler):
             payload["run"] = self.runner.snapshot()
             self._send_json(payload)
         elif route == "/api/spec":
-            spec_path = self.state.project_dir / "spec.md"
-            content = spec_path.read_text(encoding="utf-8") if spec_path.exists() else ""
+            content = self.store.read_text("spec.md") if self.store.exists("spec.md") else ""
             self._send_json({"content": content, "summary": self.state.spec_summary()})
         elif route == "/api/brief":
-            brief_path = self.state.project_dir / "product-brief.md"
-            content = brief_path.read_text(encoding="utf-8") if brief_path.exists() else ""
+            name = "product-brief.md"
+            content = self.store.read_text(name) if self.store.exists(name) else ""
             self._send_json({"content": content})
         elif route == "/api/file":
             self._send_json(self.state.read_text_file(query.get("path", [""])[0]))
         elif route == "/api/download":
-            self._send_download(self.state.resolve(query.get("path", [""])[0]))
+            self._send_download(query.get("path", [""])[0])
         else:
             self._send_json({"error": "Unknown endpoint."}, status=404)
 
@@ -143,7 +144,7 @@ class ControlRoomHandler(BaseHTTPRequestHandler):
         if not check["valid"] and not body.get("force"):
             self._send_json({"saved": False, **check}, status=422)
             return
-        (self.state.project_dir / "spec.md").write_text(content, encoding="utf-8")
+        self.store.write_text("spec.md", content)
         self._send_json({"saved": True, "summary": self.state.spec_summary(), **check})
 
     # ------------------------------------------------------------------
@@ -160,12 +161,14 @@ class ControlRoomHandler(BaseHTTPRequestHandler):
         data = target.read_bytes()
         self._send_bytes(data, content_type=f"{content_type}; charset=utf-8", cache=False)
 
-    def _send_download(self, path: Path) -> None:
-        content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    def _send_download(self, path: str) -> None:
+        data = self.store.read_bytes(path)
+        name = path.rsplit("/", 1)[-1]
+        content_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
         self._send_bytes(
-            path.read_bytes(),
+            data,
             content_type=content_type,
-            extra_headers={"Content-Disposition": f'attachment; filename="{path.name}"'},
+            extra_headers={"Content-Disposition": f'attachment; filename="{name}"'},
         )
 
     # ------------------------------------------------------------------
@@ -214,13 +217,28 @@ class ControlRoomHandler(BaseHTTPRequestHandler):
         sys.stderr.write(f"  {self.address_string()} — {fmt % args}\n")
 
 
-def build_server(host: str, port: int, project_dir: Path) -> ThreadingHTTPServer:
+def build_server(
+    host: str,
+    port: int,
+    project_dir: Path,
+    store: Store | None = None,
+    runner: Runner | None = None,
+) -> ThreadingHTTPServer:
+    """Bind the handler to a backend pair.
+
+    Defaults to the local backend — a directory on disk, driven by a
+    subprocess. Pass ``store``/``runner`` to serve the same dashboard against
+    any other implementation of the protocols in ``ui.backends.base``.
+    """
+    store = store or LocalStore(project_dir)
+    runner = runner or LocalRunner(REPO_ROOT, project_dir)
     handler = type(
         "BoundControlRoomHandler",
         (ControlRoomHandler,),
         {
-            "state": ProjectState(project_dir),
-            "runner": RunManager(REPO_ROOT, project_dir),
+            "state": ProjectState(store),
+            "store": store,
+            "runner": runner,
         },
     )
     return ThreadingHTTPServer((host, port), handler)

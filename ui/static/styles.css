@@ -174,7 +174,12 @@ main { flex: 1; min-height: 0; display: flex; }
 
 .split { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .artifacts-split { grid-template-columns: minmax(260px, 1fr) 2fr; }
-@media (max-width: 900px) { .split { grid-template-columns: 1fr; overflow: auto; } }
+
+/* Tablet and below: stack the panes and let the page scroll as a whole. */
+@media (max-width: 900px) {
+  .split { grid-template-columns: 1fr; overflow: auto; }
+  .split > .panel { min-height: 320px; }
+}
 
 .panel {
   display: flex;
@@ -466,3 +471,91 @@ main { flex: 1; min-height: 0; display: flex; }
 }
 .toast.bad { border-color: var(--fail); color: var(--fail); }
 .toast.ok { border-color: var(--pass); color: var(--pass); }
+
+/* ── Phone ───────────────────────────────────────────────────────
+   Below 620px the dashboard is driven by thumb, not cursor: controls
+   become full-width rows with 44px touch targets, the gate track turns
+   into a snap-scrolling strip, and every input sits at 16px so iOS does
+   not zoom the viewport when it takes focus.                        */
+
+@media (max-width: 620px) {
+  .topbar {
+    gap: 10px;
+    padding: 10px 14px;
+  }
+  .brand h1 { font-size: 13px; }
+  .project {
+    font-size: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 60vw;
+  }
+  .run-state { margin-left: auto; flex-direction: column; align-items: flex-end; gap: 2px; }
+  .run-meta { font-size: 10px; text-align: right; }
+
+  /* Row 1: the two run modifiers. Row 2: the primary action, full width.
+     Row 3: the two destructive-ish actions, away from the thumb's resting
+     position over Run. */
+  .controls {
+    order: 3;
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .controls .btn { min-height: 44px; font-size: 14px; white-space: nowrap; }
+  #btn-run { grid-column: 1 / -1; }
+  .controls .toggle {
+    justify-content: center;
+    min-height: 38px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    font-size: 13px;
+  }
+  .controls .toggle input { width: 17px; height: 17px; }
+
+  .tabs { overflow-x: auto; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { flex: 1 0 auto; min-height: 44px; font-size: 14px; }
+
+  .view { padding: 12px; gap: 12px; }
+  .split { gap: 12px; }
+  .split > .panel { min-height: 260px; }
+
+  /* Gate track: a swipeable strip rather than seven cramped columns. */
+  .track {
+    scroll-snap-type: x mandatory;
+    margin: 0 -12px;
+    padding: 0 12px 4px;
+  }
+  .node {
+    flex: 0 0 auto;
+    min-width: 96px;
+    scroll-snap-align: start;
+    padding: 8px 10px;
+  }
+  .node .label { font-size: 12px; }
+
+  .panel-head { padding: 10px 12px; flex-wrap: wrap; }
+  .stage-head { padding: 12px 10px; }
+  .stage-head .purpose { display: none; }
+  .stage-body { padding: 0 12px 12px 12px; }
+  .kv { grid-template-columns: 76px 1fr; }
+  .kv dd { font-size: 11px; }
+  .dim-row { flex-wrap: wrap; }
+  .dim-row .m { flex-basis: 100%; }
+  .chip { min-height: 34px; display: inline-flex; align-items: center; }
+
+  /* 16px keeps iOS from zooming the page when an input takes focus. */
+  .filter, .editor { font-size: 16px; }
+  .filter { width: 100%; }
+  .editor.tall { min-height: 240px; }
+  .console { font-size: 11px; }
+
+  .spec-split { grid-template-columns: 1fr; }
+  .tree-item { min-height: 38px; align-items: center; }
+  .preview p, .preview li { font-size: 15px; }
+
+  .toast { left: 12px; right: 12px; bottom: 12px; transform: none; text-align: center; }
+}

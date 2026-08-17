@@ -1,19 +1,24 @@
 """Project inspection for the UI — turns the file stack into a JSON payload.
 
 The pipeline keeps all of its state in files (``status.json``, ``status.md``,
-``qa-reviews/``, stage output dirs). This module reads that stack and shapes it
-into what the dashboard renders. It is read-only: nothing here mutates a run.
+``qa-reviews/``, stage output dirs). This module reads that stack through a
+:class:`~ui.backends.base.Store` and shapes it into what the dashboard renders.
+
+It never touches a filesystem directly. That is deliberate: it is what allows
+the same dashboard to be served from a machine that holds the project on disk
+or from somewhere that reads the project out of a git repository.
 """
 
 from __future__ import annotations
 
 import json
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from gates.rubrics import RUBRICS
-from utils.file_io import FileIO
+from ui.backends.base import MAX_PREVIEW_BYTES, Store
 from utils.spec_parser import SpecParser
 
 #: (state key, gate number, display label, one-line purpose, rubric key)
@@ -49,26 +54,36 @@ ROOT_FILES: tuple[str, ...] = (
     "implement.md",
 )
 
-TEXT_SUFFIXES = {".md", ".txt", ".json", ".csv", ".yml", ".yaml", ".py", ".html", ".css", ".js"}
-MAX_PREVIEW_BYTES = 400_000
+
+def parse_spec_text(text: str) -> dict[str, Any]:
+    """Parse spec text through the pipeline's own parser, without touching disk.
+
+    SpecParser reads from a path, so the text is staged in a temp file. Specs
+    are a few kilobytes, so this is cheaper than it looks and keeps the UI from
+    forking the parsing rules — the pipeline stays the single source of truth
+    on what a valid spec is.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        probe = Path(tmp) / "spec.md"
+        probe.write_text(text, encoding="utf-8")
+        return SpecParser(probe).parse()
 
 
 class ProjectState:
-    """Reads the project file stack for the dashboard."""
+    """Reads a project's file stack for the dashboard."""
 
-    def __init__(self, project_dir: Path) -> None:
-        self.project_dir = project_dir
-        self.io = FileIO(project_dir)
+    def __init__(self, store: Store) -> None:
+        self.store = store
 
     # ------------------------------------------------------------------
     # Aggregate payload
     # ------------------------------------------------------------------
 
     def payload(self) -> dict[str, Any]:
-        state = self.io.read_state()
+        state = self.read_state()
         return {
             "server_time": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "project_dir": str(self.project_dir),
+            "project_dir": self.store.label,
             "pipeline": {
                 "status": state.get("pipeline_status", "idle"),
                 "started_at": state.get("started_at"),
@@ -82,14 +97,24 @@ class ProjectState:
             "artifacts": self.artifacts(),
         }
 
+    def read_state(self) -> dict[str, Any]:
+        """The pipeline's machine state (``status.json``), or {} if absent."""
+        if not self.store.exists("status.json"):
+            return {}
+        try:
+            return json.loads(self.store.read_text("status.json"))
+        except (json.JSONDecodeError, ValueError):
+            return {}
+
     # ------------------------------------------------------------------
     # Stages and gates
     # ------------------------------------------------------------------
 
     def stages(self, state: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-        state = self.io.read_state() if state is None else state
+        state = self.read_state() if state is None else state
         stage_state = state.get("stages", {})
         threshold = self._threshold()
+        reviews = self._reviews_by_gate()
 
         stages: list[dict[str, Any]] = []
         for key, gate, label, purpose, rubric_key in STAGES:
@@ -110,23 +135,26 @@ class ProjectState:
                     "feedback": recorded.get("feedback"),
                     "error": recorded.get("error"),
                     "rubric": RUBRICS.get(rubric_key, []),
-                    "reviews": self._reviews_for_gate(gate),
+                    "reviews": reviews.get(gate, []),
                 }
             )
         return stages
 
-    def _reviews_for_gate(self, gate: int) -> list[dict[str, Any]]:
-        review_dir = self.project_dir / "qa-reviews"
-        if not review_dir.is_dir():
-            return []
-        matches = sorted(review_dir.glob(f"gate-{gate}-review*.md"))
-        return [
-            {
-                "path": str(path.relative_to(self.project_dir)),
-                "attempt": self._attempt_from_name(path.name),
-            }
-            for path in matches
-        ]
+    def _reviews_by_gate(self) -> dict[int, list[dict[str, Any]]]:
+        by_gate: dict[int, list[dict[str, Any]]] = {}
+        for meta in self.store.walk("qa-reviews"):
+            if not meta.name.startswith("gate-") or not meta.name.endswith(".md"):
+                continue
+            try:
+                gate = int(meta.name.split("-")[1])
+            except (IndexError, ValueError):
+                continue
+            by_gate.setdefault(gate, []).append(
+                {"path": meta.path, "attempt": self._attempt_from_name(meta.name)}
+            )
+        for entries in by_gate.values():
+            entries.sort(key=lambda entry: entry["attempt"])
+        return by_gate
 
     @staticmethod
     def _attempt_from_name(name: str) -> int:
@@ -139,22 +167,20 @@ class ProjectState:
             return 0
 
     def _threshold(self) -> float:
-        try:
-            spec = SpecParser(self.project_dir / "spec.md").parse()
-        except (FileNotFoundError, ValueError):
+        summary = self.spec_summary()
+        if not summary.get("valid"):
             return 0.8
-        return spec.get("quality_thresholds", {}).get("min_gate_confidence", 0.8)
+        return summary.get("min_gate_confidence", 0.8)
 
     # ------------------------------------------------------------------
     # Spec
     # ------------------------------------------------------------------
 
     def spec_summary(self) -> dict[str, Any]:
-        spec_path = self.project_dir / "spec.md"
-        if not spec_path.exists():
+        if not self.store.exists("spec.md"):
             return {"exists": False, "valid": False, "error": "spec.md not found."}
         try:
-            spec = SpecParser(spec_path).parse()
+            spec = parse_spec_text(self.store.read_text("spec.md"))
         except ValueError as exc:
             return {"exists": True, "valid": False, "error": str(exc)}
 
@@ -186,15 +212,10 @@ class ProjectState:
 
     def validate_spec_text(self, text: str) -> dict[str, Any]:
         """Parse spec text without writing it, for the editor's live check."""
-        import tempfile
-
-        with tempfile.TemporaryDirectory() as tmp:
-            probe = Path(tmp) / "spec.md"
-            probe.write_text(text, encoding="utf-8")
-            try:
-                spec = SpecParser(probe).parse()
-            except ValueError as exc:
-                return {"valid": False, "error": str(exc)}
+        try:
+            spec = parse_spec_text(text)
+        except ValueError as exc:
+            return {"valid": False, "error": str(exc)}
         return {
             "valid": True,
             "error": None,
@@ -209,69 +230,27 @@ class ProjectState:
     def artifacts(self) -> list[dict[str, Any]]:
         groups: list[dict[str, Any]] = []
 
-        root_files = [
-            self._describe(self.project_dir / name)
-            for name in ROOT_FILES
-            if (self.project_dir / name).is_file()
-        ]
+        root_files = [meta.as_dict() for name in ROOT_FILES if (meta := self.store.stat(name))]
         if root_files:
             groups.append({"name": "project", "files": root_files})
 
         for dirname in ARTIFACT_DIRS:
-            directory = self.project_dir / dirname
-            if not directory.is_dir():
-                continue
-            files = [
-                self._describe(path)
-                for path in sorted(directory.rglob("*"))
-                if path.is_file() and "__pycache__" not in path.parts
-            ]
+            files = [meta.as_dict() for meta in self.store.walk(dirname)]
             if files:
                 groups.append({"name": dirname, "files": files})
         return groups
 
-    def _describe(self, path: Path) -> dict[str, Any]:
-        stat = path.stat()
-        return {
-            "path": str(path.relative_to(self.project_dir)),
-            "name": path.name,
-            "size": stat.st_size,
-            "modified": datetime.fromtimestamp(stat.st_mtime, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "suffix": path.suffix.lower(),
-            "previewable": path.suffix.lower() in TEXT_SUFFIXES,
-        }
-
     # ------------------------------------------------------------------
-    # File access (sandboxed to the project directory)
+    # File access
     # ------------------------------------------------------------------
-
-    def resolve(self, relative_path: str) -> Path:
-        """Resolve a request path inside the project dir, or raise ValueError.
-
-        Guards against ``..`` traversal and symlinks pointing outside the
-        project, and refuses to serve the git directory.
-        """
-        if not relative_path:
-            raise ValueError("No path given.")
-        candidate = (self.project_dir / relative_path).resolve()
-        root = self.project_dir.resolve()
-        if candidate != root and root not in candidate.parents:
-            raise ValueError("Path escapes the project directory.")
-        if ".git" in candidate.relative_to(root).parts:
-            raise ValueError("Refusing to serve the git directory.")
-        if not candidate.is_file():
-            raise ValueError(f"Not a file: {relative_path}")
-        return candidate
 
     def read_text_file(self, relative_path: str) -> dict[str, Any]:
-        path = self.resolve(relative_path)
-        size = path.stat().st_size
-        truncated = size > MAX_PREVIEW_BYTES
-        with path.open("r", encoding="utf-8", errors="replace") as handle:
-            content = handle.read(MAX_PREVIEW_BYTES)
+        meta = self.store.stat(relative_path)
+        content = self.store.read_text(relative_path)
+        size = meta.size if meta else len(content.encode("utf-8"))
         return {
             "path": relative_path,
             "size": size,
-            "truncated": truncated,
+            "truncated": size > MAX_PREVIEW_BYTES,
             "content": content,
         }

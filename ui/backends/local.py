@@ -1,22 +1,23 @@
-"""RunManager — owns the orchestrator subprocess launched from the UI.
+"""Local backend — a project directory on disk, driven by a subprocess.
 
-The UI never imports the pipeline in-process. It shells out to
-``orchestrator.py`` exactly the way the CLI does, so a run started from the
-browser is byte-for-byte the same run a human would start from a terminal.
-Stdout/stderr are captured line by line into a bounded ring buffer that the
-front end tails with ``/api/log?since=N``.
+This is the implementation the CLI's own workflow implies: the file stack is a
+directory, and a run is ``python orchestrator.py`` in a child process. It is
+the reference implementation of both protocols in ``ui.backends.base``.
 """
 
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 import threading
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
+
+from ui.backends.base import FileMeta, MAX_PREVIEW_BYTES, RunAlreadyActive, StoreError
 
 MAX_LOG_LINES = 4000
 BRIEF_FILENAME = "product-brief.md"
@@ -32,12 +33,101 @@ def utcnow() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-class RunAlreadyActive(RuntimeError):
-    """Raised when a second run is requested while one is still in flight."""
+# ----------------------------------------------------------------------
+# Store
+# ----------------------------------------------------------------------
 
 
-class RunManager:
-    """Starts, stops and observes a single orchestrator run at a time."""
+class LocalStore:
+    """A project directory, with every path resolved inside it."""
+
+    def __init__(self, project_dir: Path) -> None:
+        self.project_dir = project_dir
+        self.root = project_dir.resolve()
+
+    @property
+    def label(self) -> str:
+        return str(self.project_dir)
+
+    # -- path safety ---------------------------------------------------
+
+    def resolve(self, relative_path: str) -> Path:
+        """Resolve a request path inside the project dir, or raise StoreError.
+
+        Guards against ``..`` traversal and symlinks pointing outside the
+        project, and refuses to serve the git directory.
+        """
+        if not relative_path:
+            raise StoreError("No path given.")
+        candidate = (self.project_dir / relative_path).resolve()
+        if candidate != self.root and self.root not in candidate.parents:
+            raise StoreError("Path escapes the project directory.")
+        if ".git" in candidate.relative_to(self.root).parts:
+            raise StoreError("Refusing to serve the git directory.")
+        if not candidate.is_file():
+            raise StoreError(f"Not a file: {relative_path}")
+        return candidate
+
+    # -- Store protocol ------------------------------------------------
+
+    def exists(self, path: str) -> bool:
+        return (self.project_dir / path).is_file()
+
+    def read_text(self, path: str) -> str:
+        target = self.resolve(path)
+        with target.open("r", encoding="utf-8", errors="replace") as handle:
+            return handle.read(MAX_PREVIEW_BYTES)
+
+    def read_bytes(self, path: str) -> bytes:
+        return self.resolve(path).read_bytes()
+
+    def write_text(self, path: str, content: str) -> None:
+        target = self.project_dir / path
+        if self.root not in target.resolve().parents:
+            raise StoreError("Path escapes the project directory.")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+
+    def stat(self, path: str) -> FileMeta | None:
+        target = self.project_dir / path
+        if not target.is_file():
+            return None
+        return self._meta(target)
+
+    def walk(self, prefix: str) -> Iterable[FileMeta]:
+        directory = self.project_dir / prefix
+        if not directory.is_dir():
+            return []
+        return [
+            self._meta(path)
+            for path in sorted(directory.rglob("*"))
+            if path.is_file() and "__pycache__" not in path.parts
+        ]
+
+    def _meta(self, path: Path) -> FileMeta:
+        info = path.stat()
+        return FileMeta(
+            path=path.relative_to(self.project_dir).as_posix(),
+            name=path.name,
+            size=info.st_size,
+            modified=datetime.fromtimestamp(info.st_mtime, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        )
+
+
+# ----------------------------------------------------------------------
+# Runner
+# ----------------------------------------------------------------------
+
+
+class LocalRunner:
+    """Owns the orchestrator subprocess launched from the UI.
+
+    The UI never imports the pipeline in-process. It shells out to
+    ``orchestrator.py`` exactly the way the CLI does, so a run started from the
+    browser is byte-for-byte the run a human would start from a terminal.
+    Stdout/stderr are captured line by line into a bounded ring buffer that the
+    front end tails with ``/api/log?since=N``.
+    """
 
     def __init__(self, repo_root: Path, project_dir: Path) -> None:
         self.repo_root = repo_root
@@ -53,15 +143,14 @@ class RunManager:
             "pid": None,
             "argv": [],
             "mode": None,
+            "backend": "local",
             "started_at": None,
             "finished_at": None,
             "exit_code": None,
             "stopped_by_user": False,
         }
 
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
+    # -- lifecycle -----------------------------------------------------
 
     def start(
         self,
@@ -113,6 +202,7 @@ class RunManager:
                 "pid": self._process.pid,
                 "argv": argv[1:],  # hide the interpreter path
                 "mode": self._describe_mode(dry_run, resume, bool(brief)),
+                "backend": "local",
                 "started_at": utcnow(),
                 "finished_at": None,
                 "exit_code": None,
@@ -150,8 +240,6 @@ class RunManager:
         Only the fixed allowlist above is removed. Refuses while a run is
         active so a half-written stage is never yanked out from under it.
         """
-        import shutil
-
         with self._lock:
             if self._process is not None and self._process.poll() is None:
                 raise RunAlreadyActive("Cannot reset while a run is in progress.")
@@ -178,9 +266,7 @@ class RunManager:
                 self._append_log("system", "Reset: nothing to remove — workspace already clean.")
         return removed
 
-    # ------------------------------------------------------------------
-    # Observation
-    # ------------------------------------------------------------------
+    # -- observation ---------------------------------------------------
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
@@ -200,9 +286,7 @@ class RunManager:
             lines = [entry for entry in self._log if entry["seq"] > since]
             return {"lines": lines, "cursor": self._seq}
 
-    # ------------------------------------------------------------------
-    # Internals
-    # ------------------------------------------------------------------
+    # -- internals -----------------------------------------------------
 
     def _pump_output(self, process: subprocess.Popen[str]) -> None:
         assert process.stdout is not None

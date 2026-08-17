@@ -99,6 +99,11 @@ gate score against its threshold, lets you edit `spec.md` with live parse
 validation, and previews or downloads any artifact a run produced. Stdlib only —
 nothing to install. See [ui/README.md](ui/README.md).
 
+Or run it with no machine of your own, from a phone: the **Run pipeline**
+workflow takes a brief, executes the pipeline on a GitHub Actions runner, and
+reports every gate score in the run summary. See
+[running it remotely](ui/README.md#running-it-remotely).
+
 ### 4. Collect output
 
 When complete, check `output/` for deliverables and `status.md` for the
@@ -153,11 +158,15 @@ factoreality/
 │   ├── brief_template.md     # Optional brief for auto-generated specs
 │   └── product_profiles.json # Quality settings per product type
 │
-├── ui/                      # Local web control room (stdlib only)
+├── ui/                      # Web control room (stdlib only)
 │   ├── server.py            # HTTP server: static assets + JSON API
-│   ├── runner.py            # Owns the orchestrator subprocess
 │   ├── state.py             # Projects the file stack into dashboard state
+│   ├── backends/            # Store / Runner protocols + local implementations
 │   └── static/              # index.html + app.js + styles.css
+│
+├── .github/workflows/
+│   ├── run-pipeline.yml     # Remote execution plane (workflow_dispatch)
+│   └── tests.yml            # Test suite + end-to-end pipeline smoke test
 │
 ├── .harness/                # Local agentic task ledger
 ├── research/                # Stage 1 output

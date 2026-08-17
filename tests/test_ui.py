@@ -9,7 +9,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from ui.runner import RunManager
+from ui.backends import FileMeta, LocalRunner, LocalStore, Runner, Store, StoreError
 from ui.server import build_server
 from ui.state import ProjectState
 
@@ -30,7 +30,7 @@ def make_project(tmp: str) -> Path:
 class ProjectStateTests(unittest.TestCase):
     def test_stages_default_to_pending_without_a_run(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            state = ProjectState(make_project(tmp))
+            state = ProjectState(LocalStore(make_project(tmp)))
             stages = state.stages()
             self.assertEqual(len(stages), 7)
             self.assertEqual([s["gate"] for s in stages], [0, 1, 2, 3, 4, 5, 6])
@@ -51,7 +51,7 @@ class ProjectStateTests(unittest.TestCase):
                 }),
                 encoding="utf-8",
             )
-            payload = ProjectState(project_dir).payload()
+            payload = ProjectState(LocalStore(project_dir)).payload()
             by_key = {stage["key"]: stage for stage in payload["stages"]}
 
             self.assertEqual(payload["pipeline"]["status"], "halted")
@@ -65,13 +65,13 @@ class ProjectStateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_dir = make_project(tmp)
             # The bundled spec.md pins 0.9.
-            self.assertEqual(ProjectState(project_dir).stages()[0]["threshold"], 0.9)
+            self.assertEqual(ProjectState(LocalStore(project_dir)).stages()[0]["threshold"], 0.9)
 
     def test_spec_summary_reports_parse_failure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project_dir = make_project(tmp)
             (project_dir / "spec.md").write_text("# Nothing useful\n", encoding="utf-8")
-            summary = ProjectState(project_dir).spec_summary()
+            summary = ProjectState(LocalStore(project_dir)).spec_summary()
             self.assertFalse(summary["valid"])
             self.assertIn("missing required fields", summary["error"])
 
@@ -79,7 +79,7 @@ class ProjectStateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_dir = make_project(tmp)
             original = (project_dir / "spec.md").read_text(encoding="utf-8")
-            state = ProjectState(project_dir)
+            state = ProjectState(LocalStore(project_dir))
 
             self.assertFalse(state.validate_spec_text("## Nope\n")["valid"])
             good = state.validate_spec_text("## Product Type\nebook\n\n## Topic & Angle\nX\n")
@@ -92,19 +92,129 @@ class ProjectStateTests(unittest.TestCase):
             project_dir = make_project(tmp)
             (project_dir / ".git").mkdir()
             (project_dir / ".git" / "config").write_text("secret", encoding="utf-8")
-            state = ProjectState(project_dir)
+            store = LocalStore(project_dir)
 
-            self.assertTrue(str(state.resolve("spec.md")).endswith("spec.md"))
+            self.assertTrue(str(store.resolve("spec.md")).endswith("spec.md"))
             for bad in ("../../etc/passwd", "/etc/passwd", ".git/config", "", "missing.md"):
-                with self.assertRaises(ValueError):
-                    state.resolve(bad)
+                with self.assertRaises(StoreError):
+                    store.resolve(bad)
+
+    def test_write_outside_the_project_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = LocalStore(make_project(tmp))
+            with self.assertRaises(StoreError):
+                store.write_text("../escaped.md", "nope")
+            self.assertFalse((Path(tmp) / "escaped.md").exists())
 
 
-class RunManagerTests(unittest.TestCase):
+class StoreSeamTests(unittest.TestCase):
+    """ProjectState must work against any Store — not just a directory.
+
+    This is the contract that lets the control plane run somewhere other than
+    the machine holding the files (e.g. reading a project out of a git repo).
+    """
+
+    def test_dashboard_renders_from_an_in_memory_store(self) -> None:
+        state = ProjectState(MemoryStore({
+            "spec.md": "## Product Type\nebook\n\n## Topic & Angle\nSourdough for beginners\n",
+            "status.json": json.dumps({
+                "pipeline_status": "running",
+                "stages": {"plan": {"status": "passed", "score": 0.91, "attempt": 2}},
+            }),
+            "qa-reviews/gate-0-review.md": "# Gate 0\n**Verdict:** PASS\n",
+            "qa-reviews/gate-0-review-attempt-1.md": "# Gate 0\n**Verdict:** REVISE\n",
+            "output/manifest.json": "{}",
+        }))
+
+        payload = state.payload()
+        by_key = {stage["key"]: stage for stage in payload["stages"]}
+
+        self.assertEqual(payload["pipeline"]["status"], "running")
+        self.assertEqual(payload["spec"]["product_type"], "ebook")
+        self.assertEqual(by_key["plan"]["score"], 0.91)
+        self.assertEqual(by_key["research"]["status"], "pending")
+
+        # Reviews are discovered through the store's walk(), and ordered.
+        self.assertEqual([r["attempt"] for r in by_key["plan"]["reviews"]], [0, 1])
+
+        groups = {group["name"]: group for group in payload["artifacts"]}
+        self.assertIn("output", groups)
+        self.assertEqual(groups["output"]["files"][0]["name"], "manifest.json")
+        self.assertTrue(groups["output"]["files"][0]["previewable"])
+
+    def test_missing_spec_is_reported_not_raised(self) -> None:
+        payload = ProjectState(MemoryStore({})).payload()
+        self.assertFalse(payload["spec"]["valid"])
+        self.assertEqual(payload["pipeline"]["status"], "idle")
+        self.assertEqual(payload["artifacts"], [])
+
+    def test_local_backend_satisfies_the_protocols(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_dir = make_project(tmp)
+            self.assertIsInstance(LocalStore(project_dir), Store)
+            self.assertIsInstance(LocalRunner(project_dir, project_dir), Runner)
+            self.assertIsInstance(MemoryStore({}), Store)
+
+    def test_server_accepts_an_injected_backend(self) -> None:
+        """build_server must not hard-code the local backend."""
+        store = MemoryStore({"spec.md": "## Product Type\nebook\n\n## Topic & Angle\nX\n"})
+        server = build_server("127.0.0.1", 0, Path("/nonexistent"), store=store)
+        try:
+            base = f"http://127.0.0.1:{server.server_address[1]}"
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            with urllib.request.urlopen(f"{base}/api/state", timeout=10) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            self.assertEqual(payload["project_dir"], "memory://test")
+            self.assertEqual(payload["spec"]["product_type"], "ebook")
+        finally:
+            server.shutdown()
+            server.server_close()
+
+
+class MemoryStore:
+    """A Store with no filesystem behind it, used to prove the seam holds."""
+
+    def __init__(self, files: dict[str, str]) -> None:
+        self.files = files
+
+    @property
+    def label(self) -> str:
+        return "memory://test"
+
+    def exists(self, path: str) -> bool:
+        return path in self.files
+
+    def read_text(self, path: str) -> str:
+        if path not in self.files:
+            raise StoreError(f"Not a file: {path}")
+        return self.files[path]
+
+    def read_bytes(self, path: str) -> bytes:
+        return self.read_text(path).encode("utf-8")
+
+    def write_text(self, path: str, content: str) -> None:
+        self.files[path] = content
+
+    def stat(self, path: str):
+        if path not in self.files:
+            return None
+        return FileMeta(
+            path=path,
+            name=path.rsplit("/", 1)[-1],
+            size=len(self.files[path].encode("utf-8")),
+            modified="2026-01-01T00:00:00Z",
+        )
+
+    def walk(self, prefix: str):
+        return [self.stat(path) for path in sorted(self.files) if path.startswith(f"{prefix}/")]
+
+
+class LocalRunnerTests(unittest.TestCase):
     def test_full_run_completes_and_streams_log(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project_dir = make_project(tmp)
-            runner = RunManager(project_dir, project_dir)
+            runner = LocalRunner(project_dir, project_dir)
             runner.start()
             self._wait_for_exit(runner)
 
@@ -125,7 +235,7 @@ class RunManagerTests(unittest.TestCase):
     def test_second_run_is_rejected_while_one_is_active(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project_dir = make_project(tmp)
-            runner = RunManager(project_dir, project_dir)
+            runner = LocalRunner(project_dir, project_dir)
             runner.start()
             try:
                 runner.start()
@@ -136,7 +246,7 @@ class RunManagerTests(unittest.TestCase):
     def test_regenerate_spec_without_a_brief_is_refused(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project_dir = make_project(tmp)
-            runner = RunManager(project_dir, project_dir)
+            runner = LocalRunner(project_dir, project_dir)
             with self.assertRaises(ValueError):
                 runner.start(regenerate_spec=True)
             self.assertFalse(runner.snapshot()["active"])
@@ -144,7 +254,7 @@ class RunManagerTests(unittest.TestCase):
     def test_brief_is_written_and_passed_to_the_orchestrator(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project_dir = make_project(tmp)
-            runner = RunManager(project_dir, project_dir)
+            runner = LocalRunner(project_dir, project_dir)
             run = runner.start(brief="A guide to composting in small apartments.", dry_run=True)
             self._wait_for_exit(runner)
 
@@ -157,7 +267,7 @@ class RunManagerTests(unittest.TestCase):
     def test_reset_removes_only_generated_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project_dir = make_project(tmp)
-            runner = RunManager(project_dir, project_dir)
+            runner = LocalRunner(project_dir, project_dir)
             runner.start()
             self._wait_for_exit(runner)
 
@@ -172,7 +282,7 @@ class RunManagerTests(unittest.TestCase):
             self.assertTrue((project_dir / "orchestrator.py").exists())
 
     @staticmethod
-    def _wait_for_exit(runner: RunManager, timeout: float = 60.0) -> None:
+    def _wait_for_exit(runner: LocalRunner, timeout: float = 60.0) -> None:
         import time
 
         deadline = time.monotonic() + timeout
@@ -259,7 +369,7 @@ class ApiTests(unittest.TestCase):
 
     def test_run_then_inspect_artifacts_and_log(self) -> None:
         self.post("/api/run", {})
-        RunManagerTests._wait_for_exit(self.server.RequestHandlerClass.runner)
+        LocalRunnerTests._wait_for_exit(self.server.RequestHandlerClass.runner)
 
         state = self.get("/api/state")
         self.assertEqual(state["pipeline"]["status"], "completed")
@@ -285,7 +395,7 @@ class ApiTests(unittest.TestCase):
                 self.post("/api/run", {})
             self.assertEqual(ctx.exception.code, 409)
         finally:
-            RunManagerTests._wait_for_exit(self.server.RequestHandlerClass.runner)
+            LocalRunnerTests._wait_for_exit(self.server.RequestHandlerClass.runner)
 
     def test_unknown_endpoint_is_404(self) -> None:
         with self.assertRaises(urllib.error.HTTPError) as ctx:
