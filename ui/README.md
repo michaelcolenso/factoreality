@@ -129,7 +129,8 @@ cloudflared tunnel --url http://127.0.0.1:8420
 Caveat: it only serves while your machine is awake.
 
 **2. GitHub Actions — the execution plane without a machine.** The
-`Run pipeline` workflow (`.github/workflows/run-pipeline.yml`) takes a brief and
+`Run pipeline` workflow (in `deploy/workflows/`, one `git mv` from active —
+see [deploy/README.md](../deploy/README.md)) takes a brief and
 the same `--dry-run` / `--regenerate-spec` flags, and can be dispatched from the
 GitHub mobile app. Gate scores land in the run summary as a table you can read
 on a phone; deliverables upload as run artifacts, and `open_pr` commits the

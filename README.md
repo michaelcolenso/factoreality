@@ -164,9 +164,8 @@ factoreality/
 │   ├── backends/            # Store / Runner protocols + local implementations
 │   └── static/              # index.html + app.js + styles.css
 │
-├── .github/workflows/
-│   ├── run-pipeline.yml     # Remote execution plane (workflow_dispatch)
-│   └── tests.yml            # Test suite + end-to-end pipeline smoke test
+├── deploy/                  # Remote execution: CI + run workflows, install docs
+│   └── workflows/           # run-pipeline.yml (workflow_dispatch) + tests.yml
 │
 ├── .harness/                # Local agentic task ledger
 ├── research/                # Stage 1 output
