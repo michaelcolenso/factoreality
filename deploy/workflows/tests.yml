@@ -1,0 +1,32 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run test suite
+        run: python -m unittest discover -s tests -t . -v
+
+      # Proves the pipeline runs end to end on a clean runner — the assumption
+      # the Actions-based execution plane depends on.
+      - name: Smoke-test the pipeline
+        run: |
+          python orchestrator.py .
+          test -f output/manifest.json
+          python .github/scripts/run_summary.py . >> "$GITHUB_STEP_SUMMARY"
